@@ -1,0 +1,7 @@
+[
+  { "object": "user", "id": "user-001", "name": "April", "type": "person" },
+  { "object": "user", "id": "user-002", "name": "Nick", "type": "person" },
+  { "object": "user", "id": "user-003", "name": "Greg", "type": "person" },
+  { "object": "user", "id": "user-004", "name": "Swetha", "type": "person" },
+  { "object": "user", "id": "user-005", "name": "Shunfeng", "type": "person" }
+]

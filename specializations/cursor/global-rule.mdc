@@ -1,0 +1,53 @@
+---
+description: Wayfind — Session Protocol (Global)
+alwaysApply: true
+---
+
+## Session State Protocol
+
+**Memory system:** Hierarchical plain-markdown files at `~/.ai-memory/`. No CLI tools, no databases.
+
+### File Hierarchy
+
+```
+~/.ai-memory/
+  global.md            # Thin index — ALWAYS load at session start
+  state.md             # Admin/non-repo work
+  memory/              # Topic files — load on demand
+    <topic>.md
+    journal/YYYY-MM-DD.md  # Daily log
+```
+
+### Session Start (REQUIRED)
+
+1. Read `~/.ai-memory/global.md`
+2. Read `.cursor/rules/memory.mdc` in the current repo for repo-specific context
+3. Check the Memory Files table in `global.md` — load any `~/.ai-memory/memory/` files whose keywords match this session's topic
+4. Summarize current state, then ask: **"What's the goal for this session? What does success look like?"**
+
+### Mid-Session
+
+If work drifts from the stated goal, flag it: *"Quick check — we set out to [goal]. This feels like [tangent]. Stay the course or pivot?"*
+
+### Session End Triggers
+
+When the user says "done", "stop", "done for today", "save session state", or "update memory":
+
+1. Update `<repo>/.cursor/rules/memory.mdc` with current branch, status, next steps
+2. Update the Active Projects row in `~/.ai-memory/global.md`
+3. Create/update topic files in `~/.ai-memory/memory/` for significant new cross-repo context
+4. Append to `~/.ai-memory/memory/journal/YYYY-MM-DD.md`:
+   ```
+   ## [Repo] — [Title]
+   **Why:** [Stated goal]
+   **What:** [What was done]
+   **Outcome:** [Did we hit it?]
+   **On track?:** [Focused or drift?]
+   **Lessons:** [Cross-session learnings]
+   ```
+5. Confirm: **"State saved. Say 'let's continue' next time."**
+
+### Rules
+
+- Keep `global.md` under 80 lines. Detail goes in `~/.ai-memory/memory/` files.
+- Do NOT use any CLI memory tools — plain markdown files only.

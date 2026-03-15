@@ -1,0 +1,28 @@
+{
+  "personas": [
+    {
+      "id": "product",
+      "name": "Product",
+      "description": "Decides what to build, for whom, and in what order. Produces intent, priorities, and success criteria. Consumes shipping status, discoveries, and design rationale.",
+      "autopilot": true
+    },
+    {
+      "id": "design",
+      "name": "Design",
+      "description": "Decides how the product is experienced. Produces design rationale, UX trade-offs, and rejected alternatives. Consumes product intent, engineering constraints, and usage data.",
+      "autopilot": true
+    },
+    {
+      "id": "engineering",
+      "name": "Engineering",
+      "description": "Decides how to build it and implementation trade-offs. Produces decisions, discoveries, and drift signals. Consumes product context, design rationale, and strategic constraints.",
+      "autopilot": true
+    },
+    {
+      "id": "strategy",
+      "name": "Strategy",
+      "description": "Decides where next, technology bets, and team enablement. Produces research outcomes, prototypes, and direction. Consumes cross-team patterns, drift trends, and capability gaps.",
+      "autopilot": true
+    }
+  ]
+}

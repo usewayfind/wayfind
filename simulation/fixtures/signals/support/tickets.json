@@ -1,0 +1,92 @@
+[
+  {
+    "id": "conv_001",
+    "created_at": "2026-02-15T10:30:00Z",
+    "subject": "Login page not loading on mobile Safari",
+    "status": "resolved",
+    "tags": ["bug", "mobile", "auth"],
+    "messages": [
+      { "from": "customer", "body": "I can't log in on my iPhone. The page just spins." },
+      { "from": "agent", "body": "We've identified this as a Safari WebKit issue. Fix deployed." }
+    ]
+  },
+  {
+    "id": "conv_002",
+    "created_at": "2026-02-16T09:15:00Z",
+    "subject": "CSV export missing columns",
+    "status": "resolved",
+    "tags": ["bug", "export", "data"],
+    "messages": [
+      { "from": "customer", "body": "My CSV export is missing the 'Created Date' and 'Status' columns." },
+      { "from": "agent", "body": "This was a regression in last week's release. Patch shipped today." }
+    ]
+  },
+  {
+    "id": "conv_003",
+    "created_at": "2026-02-17T14:00:00Z",
+    "subject": "How do I set up SSO?",
+    "status": "closed",
+    "tags": ["question", "sso", "enterprise"],
+    "messages": [
+      { "from": "customer", "body": "We want to configure SAML SSO for our team. Where do I start?" },
+      { "from": "agent", "body": "Head to Settings > Security > SSO. Here's our setup guide: docs.example.com/sso" },
+      { "from": "customer", "body": "Got it working, thanks!" }
+    ]
+  },
+  {
+    "id": "conv_004",
+    "created_at": "2026-02-18T11:45:00Z",
+    "subject": "Dashboard loading slowly for large datasets",
+    "status": "open",
+    "tags": ["performance", "dashboard", "enterprise"],
+    "messages": [
+      { "from": "customer", "body": "Our analytics dashboard takes 30+ seconds with 100k records." },
+      { "from": "agent", "body": "Engineering is aware and working on query optimization. ETA next week." }
+    ]
+  },
+  {
+    "id": "conv_005",
+    "created_at": "2026-02-19T08:20:00Z",
+    "subject": "Webhook not firing on status change",
+    "status": "resolved",
+    "tags": ["bug", "webhooks", "integrations"],
+    "messages": [
+      { "from": "customer", "body": "Our webhook endpoint isn't getting called when a ticket status changes." },
+      { "from": "agent", "body": "Found the issue — our event dispatcher was skipping status transitions to 'pending'. Fixed now." }
+    ]
+  },
+  {
+    "id": "conv_006",
+    "created_at": "2026-02-20T16:30:00Z",
+    "subject": "Feature request: dark mode",
+    "status": "closed",
+    "tags": ["feature-request", "ui"],
+    "messages": [
+      { "from": "customer", "body": "Any plans for dark mode? Our team works late and the bright UI is tough." },
+      { "from": "agent", "body": "Dark mode is on our Q2 roadmap. Added your vote to the feature request." }
+    ]
+  },
+  {
+    "id": "conv_007",
+    "created_at": "2026-02-21T13:10:00Z",
+    "subject": "API rate limit hit during batch import",
+    "status": "resolved",
+    "tags": ["api", "rate-limit", "enterprise"],
+    "messages": [
+      { "from": "customer", "body": "We're getting 429 errors during our nightly batch import of ~50k records." },
+      { "from": "agent", "body": "Bumped your rate limit to 1000 req/min. Consider using our bulk import endpoint for large batches." }
+    ]
+  },
+  {
+    "id": "conv_008",
+    "created_at": "2026-02-22T10:00:00Z",
+    "subject": "Two-factor auth codes not arriving",
+    "status": "resolved",
+    "tags": ["bug", "auth", "2fa"],
+    "messages": [
+      { "from": "customer", "body": "My team members aren't receiving 2FA codes via email." },
+      { "from": "agent", "body": "Our email provider had a deliverability issue. Resolved — codes should arrive within 30 seconds now." },
+      { "from": "customer", "body": "Confirmed, working again." }
+    ]
+  }
+]

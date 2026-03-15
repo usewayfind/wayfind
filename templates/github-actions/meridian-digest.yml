@@ -1,0 +1,85 @@
+# Wayfind Digest — GitHub Actions workflow
+# Generates and delivers persona-based digests on a schedule.
+# No Docker container needed — runs directly via npx.
+#
+# Setup:
+#   1. Copy this file to .github/workflows/meridian-digest.yml in your team-context repo
+#   2. Add these secrets to the repo (Settings → Secrets → Actions):
+#      - ANTHROPIC_API_KEY: Your Anthropic API key
+#      - SLACK_WEBHOOK_URL: Slack incoming webhook URL (optional — digests are also committed to the repo)
+#   3. Adjust the cron schedule below (default: Monday 8am UTC)
+#   4. Push — the workflow runs on schedule and can be triggered manually
+
+name: Wayfind Digest
+
+on:
+  schedule:
+    # Every Monday at 8:00 AM UTC — adjust to your team's timezone
+    - cron: '0 8 * * 1'
+  workflow_dispatch:
+    inputs:
+      persona:
+        description: 'Persona to generate (empty = all configured)'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+jobs:
+  digest:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout team-context repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Wayfind
+        run: npm install -g wayfind
+
+      - name: Generate digest
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          TEAM_CONTEXT_TEAM_CONTEXT_DIR: ${{ github.workspace }}
+          TEAM_CONTEXT_JOURNALS_DIR: ${{ github.workspace }}/journals
+          TEAM_CONTEXT_SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          # Configure wayfind to use this repo as team context
+          wayfind context init "${{ github.workspace }}" 2>/dev/null || true
+
+          # Build flags
+          FLAGS=""
+          PERSONA="${{ github.event.inputs.persona }}"
+          if [ -n "$PERSONA" ]; then
+            FLAGS="--persona $PERSONA"
+          fi
+
+          # Add --deliver if webhook is configured
+          if [ -n "$TEAM_CONTEXT_SLACK_WEBHOOK" ]; then
+            FLAGS="$FLAGS --deliver"
+          fi
+
+          wayfind digest $FLAGS
+
+      - name: Commit digest to repo
+        run: |
+          DIGEST_DIR="$HOME/.claude/team-context/digests"
+          REPO_DIGEST_DIR="digests"
+
+          if [ -d "$DIGEST_DIR" ]; then
+            mkdir -p "$REPO_DIGEST_DIR"
+            cp -r "$DIGEST_DIR"/* "$REPO_DIGEST_DIR/" 2>/dev/null || true
+
+            git config user.name "Wayfind Bot"
+            git config user.email "wayfind@noreply.github.com"
+            git add "$REPO_DIGEST_DIR/"
+            DATE=$(date +%Y-%m-%d)
+            git diff --cached --quiet || git commit -m "Digest: $DATE"
+            git push
+          fi

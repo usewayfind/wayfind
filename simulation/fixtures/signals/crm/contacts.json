@@ -1,0 +1,82 @@
+[
+  {
+    "id": "contact_001",
+    "company": "Acme Corp",
+    "health_score": 72,
+    "nps_score": 8,
+    "last_activity": "2026-02-20",
+    "lifecycle_stage": "customer",
+    "renewal_date": "2026-06-15",
+    "signals": ["declining_usage", "support_ticket_spike"]
+  },
+  {
+    "id": "contact_002",
+    "company": "Globex Industries",
+    "health_score": 91,
+    "nps_score": 10,
+    "last_activity": "2026-02-27",
+    "lifecycle_stage": "customer",
+    "renewal_date": "2026-09-01",
+    "signals": ["power_user", "expansion_candidate"]
+  },
+  {
+    "id": "contact_003",
+    "company": "Initech",
+    "health_score": 45,
+    "nps_score": 4,
+    "last_activity": "2026-01-15",
+    "lifecycle_stage": "customer",
+    "renewal_date": "2026-04-01",
+    "signals": ["churn_risk", "no_login_30_days", "support_ticket_spike"]
+  },
+  {
+    "id": "contact_004",
+    "company": "Hooli",
+    "health_score": 88,
+    "nps_score": 9,
+    "last_activity": "2026-02-26",
+    "lifecycle_stage": "customer",
+    "renewal_date": "2026-12-01",
+    "signals": ["active_integration_user", "feature_request_submitted"]
+  },
+  {
+    "id": "contact_005",
+    "company": "Pied Piper",
+    "health_score": 63,
+    "nps_score": 6,
+    "last_activity": "2026-02-10",
+    "lifecycle_stage": "customer",
+    "renewal_date": "2026-05-15",
+    "signals": ["declining_usage"]
+  },
+  {
+    "id": "contact_006",
+    "company": "Stark Industries",
+    "health_score": 95,
+    "nps_score": 10,
+    "last_activity": "2026-02-28",
+    "lifecycle_stage": "customer",
+    "renewal_date": "2027-01-01",
+    "signals": ["champion_user", "expansion_candidate", "case_study_candidate"]
+  },
+  {
+    "id": "contact_007",
+    "company": "Wayne Enterprises",
+    "health_score": 55,
+    "nps_score": 5,
+    "last_activity": "2026-02-05",
+    "lifecycle_stage": "customer",
+    "renewal_date": "2026-03-30",
+    "signals": ["churn_risk", "declining_usage", "renewal_approaching"]
+  },
+  {
+    "id": "contact_008",
+    "company": "Umbrella Corp",
+    "health_score": 30,
+    "nps_score": 2,
+    "last_activity": "2025-12-20",
+    "lifecycle_stage": "former_customer",
+    "renewal_date": "2026-02-01",
+    "signals": ["churned", "no_login_60_days"]
+  }
+]

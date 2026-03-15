@@ -1,0 +1,132 @@
+# Meridian FAQ & Known Issues
+
+## Setup & Configuration
+
+### How do I set up Meridian for a new repo?
+
+Run `/init-memory` in the repo. This creates `.claude/team-state.md` (shared, tracked) and `.claude/personal-state.md` (personal, gitignored), updates `.gitignore`, and registers the repo globally.
+
+### How do I set up a team?
+
+Run `/init-team`. It walks you through creating a team, setting up profiles, creating a team-context repo, configuring Slack digests, and optionally connecting Notion.
+
+### Can I be on multiple teams?
+
+Yes (as of v1.8.25). Register additional teams with `meridian context add <team-id> <path>`, then bind repos to specific teams with `meridian context bind <team-id>`. Journals and context sync route to the correct team automatically. See `meridian context list` for your current setup.
+
+### I enabled multi-team and journals are going to the wrong repo
+
+As of v1.8.27, journal files are written per-team at extraction time (`YYYY-MM-DD-{author}-{teamId}.md`). The sync command routes each file to the correct team-context repo.
+
+If you have existing journals from before multi-team, run the migration:
+```
+meridian journal split --dry-run   # preview what will happen
+meridian journal split             # split existing files by team
+meridian journal sync              # push to correct team repos
+```
+
+The split command parses `## Org/Repo —` headers in each entry and routes them using your repo→team bindings (`.claude/meridian.json`). Originals are backed up as `.bak` files.
+
+### What files should be gitignored?
+
+These must be in `.gitignore` (NOT `.claude/` as a whole directory):
+```
+.claude/personal-state.md
+.claude/state.md
+.claude/settings.local.json
+.claude/memory.db
+.claude/meridian.json
+```
+
+`team-state.md` is intentionally tracked — it's shared context for your team.
+
+---
+
+## Digests & Slack Bot
+
+### The bot can't answer questions about older dates
+
+Fixed in v1.8.22. The bot now parses natural language dates ("March 3", "between March 3 and March 6", "March 3-6"). Previously only "today/yesterday/this week/last N days" and explicit YYYY-MM-DD worked.
+
+If you're still seeing issues, make sure your container is running the latest image.
+
+### The bot says "I don't have entries from [date range]"
+
+This usually means those journal entries haven't been indexed yet. Check:
+1. Were sessions running during that period? (`ls ~/.claude/memory/journal/`)
+2. Did journal sync run? (`meridian journal sync --since YYYY-MM-DD`)
+3. Is the container's cron job running? (Check Docker logs)
+
+### How do I change when digests are sent?
+
+Edit your `connectors.json` schedule, or ask your team admin to update the container's cron schedule. Per-member scheduling is planned.
+
+---
+
+## Multi-Agent / Swarms
+
+### How do I prevent worker agents from flooding my journals?
+
+Set `MERIDIAN_SKIP_EXPORT=1` in the environment when spawning worker agents. Only the orchestrator agent (which doesn't have this var) will export decisions. Added in v1.8.21.
+
+### Does Meridian support a push API for agent frameworks?
+
+Not yet. Currently decisions are extracted from Claude Code session transcripts. A push API (`meridian decision` CLI / HTTP endpoint) for framework-agnostic intake is being designed.
+
+---
+
+## Session Lifecycle
+
+### Do I need to manually save state at the end of a session?
+
+Usually no. The session-end hook automatically extracts decisions, writes journal entries, and syncs to the team-context repo. As of v1.8.24, it also auto-detects significant context shifts and updates state files when needed.
+
+Manual updates are only needed for major context shifts that the auto-detection misses — product pivots, new team conventions, etc.
+
+### What triggers a "significant context shift"?
+
+A lightweight Haiku LLM call classifies extracted decisions. It flags: architecture changes affecting the team, strategic pivots, new infrastructure/dependencies, priority reordering, and deployment gotchas. Routine bug fixes and incremental work are ignored.
+
+---
+
+## Digests — GitHub Actions vs. Container
+
+### I'm using the GitHub Actions workflow for digests. What happens if I also deploy the container?
+
+You'll get duplicate digests. The container and the Actions workflow both generate and deliver independently. **Disable the workflow** when you deploy the container — delete or disable `.github/workflows/meridian-digest.yml` in your team-context repo.
+
+The container handles everything the workflow does plus signal connectors and the Slack bot, so there's no reason to keep both running.
+
+---
+
+## Updates
+
+### I updated the npm package but my hooks are still old
+
+`npm update -g meridian-dev` only updates the package files. To deploy new hooks and commands to `~/.claude/hooks/`, run:
+
+```
+meridian update
+```
+
+This re-runs setup in update mode, overwriting hook scripts and commands while leaving your memory files untouched.
+
+---
+
+## Known Issues
+
+### Docker build requires `npm install` not `npm ci`
+
+As of v1.8.20, `package-lock.json` is no longer tracked. The Dockerfile uses `npm install --omit=dev`. If you have a custom Dockerfile referencing `npm ci`, switch it to `npm install`.
+
+### LLM model aliases don't work — use exact dated model IDs
+
+Anthropic model aliases like `claude-3-haiku-latest` can break. Always use exact IDs:
+- Extraction/shift detection: `claude-haiku-4-5-20251001`
+- Digest generation: `claude-sonnet-4-5-20250929`
+
+Override via env vars: `MERIDIAN_EXTRACTION_MODEL`, `MERIDIAN_SHIFT_MODEL`.
+
+### Journal dedup was fragile before v1.8.20
+
+Prior to v1.8.20, re-running `meridian reindex --export` could create duplicate journal entries because dedup only checked the first decision's title. Fixed — each decision is now individually deduped.

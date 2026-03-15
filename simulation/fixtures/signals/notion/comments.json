@@ -1,0 +1,23 @@
+[
+  {
+    "object": "comment",
+    "id": "comment-001",
+    "created_time": "2026-02-26T15:00:00.000Z",
+    "created_by": { "object": "user", "id": "user-001", "name": "April" },
+    "rich_text": [{ "type": "text", "plain_text": "Updated timeline for auth migration — pushing to Q2." }]
+  },
+  {
+    "object": "comment",
+    "id": "comment-002",
+    "created_time": "2026-02-27T09:30:00.000Z",
+    "created_by": { "object": "user", "id": "user-002", "name": "Nick" },
+    "rich_text": [{ "type": "text", "plain_text": "Dependency on new token service needs to be resolved first." }]
+  },
+  {
+    "object": "comment",
+    "id": "comment-003",
+    "created_time": "2026-02-27T14:00:00.000Z",
+    "created_by": { "object": "user", "id": "user-003", "name": "Greg" },
+    "rich_text": [{ "type": "text", "plain_text": "Agreed. Let's sync on this in Tuesday's standup." }]
+  }
+]

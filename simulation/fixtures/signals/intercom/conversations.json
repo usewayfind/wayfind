@@ -1,0 +1,207 @@
+[
+  {
+    "type": "conversation",
+    "id": "conv_101",
+    "created_at": 1740064200,
+    "updated_at": 1740150600,
+    "title": "Login page not loading on mobile Safari",
+    "state": "closed",
+    "open": false,
+    "tags": {
+      "type": "tag.list",
+      "tags": [
+        { "type": "tag", "id": "t1", "name": "bug" },
+        { "type": "tag", "id": "t2", "name": "mobile" },
+        { "type": "tag", "id": "t3", "name": "auth" }
+      ]
+    },
+    "statistics": {
+      "first_contact_reply_at": 1740071400,
+      "time_to_assignment": 120,
+      "time_to_admin_reply": 7200
+    },
+    "source": {
+      "type": "conversation",
+      "subject": "Login page not loading on mobile Safari"
+    }
+  },
+  {
+    "type": "conversation",
+    "id": "conv_102",
+    "created_at": 1740150600,
+    "updated_at": 1740237000,
+    "title": "CSV export missing columns",
+    "state": "closed",
+    "open": false,
+    "tags": {
+      "type": "tag.list",
+      "tags": [
+        { "type": "tag", "id": "t4", "name": "bug" },
+        { "type": "tag", "id": "t5", "name": "export" }
+      ]
+    },
+    "statistics": {
+      "first_contact_reply_at": 1740154200,
+      "time_to_assignment": 60,
+      "time_to_admin_reply": 3600
+    },
+    "source": {
+      "type": "conversation",
+      "subject": "CSV export missing columns"
+    }
+  },
+  {
+    "type": "conversation",
+    "id": "conv_103",
+    "created_at": 1740237000,
+    "updated_at": 1740323400,
+    "title": "How do I set up SSO?",
+    "state": "closed",
+    "open": false,
+    "tags": {
+      "type": "tag.list",
+      "tags": [
+        { "type": "tag", "id": "t6", "name": "question" },
+        { "type": "tag", "id": "t7", "name": "sso" },
+        { "type": "tag", "id": "t8", "name": "enterprise" }
+      ]
+    },
+    "statistics": {
+      "first_contact_reply_at": 1740240600,
+      "time_to_assignment": 300,
+      "time_to_admin_reply": 3600
+    },
+    "source": {
+      "type": "conversation",
+      "subject": "How do I set up SSO?"
+    }
+  },
+  {
+    "type": "conversation",
+    "id": "conv_104",
+    "created_at": 1740323400,
+    "updated_at": 1740409800,
+    "title": "Dashboard loading slowly for large datasets",
+    "state": "open",
+    "open": true,
+    "tags": {
+      "type": "tag.list",
+      "tags": [
+        { "type": "tag", "id": "t9", "name": "performance" },
+        { "type": "tag", "id": "t10", "name": "dashboard" },
+        { "type": "tag", "id": "t11", "name": "enterprise" }
+      ]
+    },
+    "statistics": {
+      "first_contact_reply_at": 1740327000,
+      "time_to_assignment": 180,
+      "time_to_admin_reply": 3600
+    },
+    "source": {
+      "type": "conversation",
+      "subject": "Dashboard loading slowly for large datasets"
+    }
+  },
+  {
+    "type": "conversation",
+    "id": "conv_105",
+    "created_at": 1740409800,
+    "updated_at": 1740496200,
+    "title": "Webhook not firing on status change",
+    "state": "closed",
+    "open": false,
+    "tags": {
+      "type": "tag.list",
+      "tags": [
+        { "type": "tag", "id": "t12", "name": "bug" },
+        { "type": "tag", "id": "t13", "name": "webhooks" },
+        { "type": "tag", "id": "t14", "name": "integrations" }
+      ]
+    },
+    "statistics": {
+      "first_contact_reply_at": 1740416400,
+      "time_to_assignment": 60,
+      "time_to_admin_reply": 6600
+    },
+    "source": {
+      "type": "conversation",
+      "subject": "Webhook not firing on status change"
+    }
+  },
+  {
+    "type": "conversation",
+    "id": "conv_106",
+    "created_at": 1740496200,
+    "updated_at": 1740582600,
+    "title": "Login timeout when using VPN",
+    "state": "open",
+    "open": true,
+    "tags": {
+      "type": "tag.list",
+      "tags": [
+        { "type": "tag", "id": "t15", "name": "bug" },
+        { "type": "tag", "id": "t16", "name": "auth" }
+      ]
+    },
+    "statistics": {
+      "first_contact_reply_at": 1740503400,
+      "time_to_assignment": 240,
+      "time_to_admin_reply": 7200
+    },
+    "source": {
+      "type": "conversation",
+      "subject": "Login timeout when using VPN"
+    }
+  },
+  {
+    "type": "conversation",
+    "id": "conv_107",
+    "created_at": 1740582600,
+    "updated_at": 1740669000,
+    "title": "Login issues after password reset",
+    "state": "closed",
+    "open": false,
+    "tags": {
+      "type": "tag.list",
+      "tags": [
+        { "type": "tag", "id": "t17", "name": "bug" },
+        { "type": "tag", "id": "t18", "name": "auth" }
+      ]
+    },
+    "statistics": {
+      "first_contact_reply_at": 1740586200,
+      "time_to_assignment": 120,
+      "time_to_admin_reply": 3600
+    },
+    "source": {
+      "type": "conversation",
+      "subject": "Login issues after password reset"
+    }
+  },
+  {
+    "type": "conversation",
+    "id": "conv_108",
+    "created_at": 1740669000,
+    "updated_at": 1740755400,
+    "title": "API rate limit hit during batch import",
+    "state": "closed",
+    "open": false,
+    "tags": {
+      "type": "tag.list",
+      "tags": [
+        { "type": "tag", "id": "t19", "name": "api" },
+        { "type": "tag", "id": "t20", "name": "rate-limit" },
+        { "type": "tag", "id": "t21", "name": "enterprise" }
+      ]
+    },
+    "statistics": {
+      "first_contact_reply_at": 1740672600,
+      "time_to_assignment": 60,
+      "time_to_admin_reply": 3600
+    },
+    "source": {
+      "type": "conversation",
+      "subject": "API rate limit hit during batch import"
+    }
+  }
+]

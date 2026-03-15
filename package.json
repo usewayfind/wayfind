@@ -1,0 +1,55 @@
+{
+  "name": "wayfind",
+  "version": "2.0.0",
+  "description": "Team decision trail for AI-assisted development. The connective tissue between product, engineering, and strategy.",
+  "bin": {
+    "wayfind": "./bin/team-context.js"
+  },
+  "keywords": [
+    "ai",
+    "claude",
+    "cursor",
+    "memory",
+    "context",
+    "team",
+    "engineering",
+    "product",
+    "decision-trail",
+    "digest",
+    "drift-detection"
+  ],
+  "author": "Greg Leizerowicz",
+  "license": "Apache-2.0",
+  "homepage": "https://github.com/usewayfind/wayfind#readme",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/usewayfind/wayfind"
+  },
+  "files": [
+    "bin/",
+    "setup.sh",
+    "install.sh",
+    "uninstall.sh",
+    "doctor.sh",
+    "journal-summary.sh",
+    "templates/",
+    "specializations/",
+    "backup/",
+    "BOOTSTRAP_PROMPT.md"
+  ],
+  "scripts": {
+    "test": "bash tests/test-bugs-core.sh && bash tests/test-bugs-reliability.sh && bash tests/test-enhancements-features.sh && bash tests/test-enhancements-tooling.sh && bash tests/test-journal-summary.sh && bash tests/test-connectors.sh && bash tests/test-intercom.sh && bash tests/test-digest.sh && bash tests/test-content-store.sh && bash tests/test-storage-backends.sh && bash tests/test-rebuild-status.sh && bash tests/test-notion.sh && bash tests/test-signal-to-digest-e2e.sh && bash tests/test-bot-commands.sh",
+    "test:sim": "bash simulation/simulate.sh",
+    "test:all": "npm test && npm run test:sim"
+  },
+  "engines": {
+    "node": ">=16"
+  },
+  "dependencies": {
+    "@slack/bolt": "^4.6.0",
+    "posthog-node": "^5.28.0"
+  },
+  "optionalDependencies": {
+    "better-sqlite3": "^11.0.0"
+  }
+}

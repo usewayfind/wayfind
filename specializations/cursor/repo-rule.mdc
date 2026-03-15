@@ -1,0 +1,25 @@
+---
+description: Wayfind — Repo State ([REPO_NAME])
+alwaysApply: true
+---
+
+## Repo State: [REPO_NAME]
+
+Last updated: YYYY-MM-DD
+
+### Current Branch
+[branch]
+
+### Current Status
+[what's happening in this repo]
+
+### What's Next
+[concrete next action]
+
+### Gotchas
+[anything to know before diving in]
+
+---
+
+*This file is maintained by the AI. Update it at session end.*
+*Global memory lives at `~/.ai-memory/global.md`.*

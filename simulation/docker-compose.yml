@@ -1,0 +1,6 @@
+services:
+  simulator:
+    build:
+      context: ..
+      dockerfile: simulation/Dockerfile
+    command: bash /wayfind/simulation/simulate.sh

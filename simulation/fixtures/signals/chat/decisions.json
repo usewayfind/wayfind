@@ -1,0 +1,62 @@
+[
+  {
+    "channel": "#product",
+    "thread_ts": "1709100000.000100",
+    "topic": "Pricing tier structure",
+    "messages": [
+      { "user": "PM", "text": "Should we do per-seat or flat team pricing?" },
+      { "user": "CEO", "text": "Flat team. Per-seat punishes growth." },
+      { "user": "PM", "text": "Agreed. Aligning with competitor analysis too." }
+    ],
+    "decision": "Flat team pricing, not per-seat",
+    "date": "2026-02-27"
+  },
+  {
+    "channel": "#engineering",
+    "thread_ts": "1709050000.000200",
+    "topic": "Database migration strategy",
+    "messages": [
+      { "user": "Tech Lead", "text": "We need to migrate from Postgres 14 to 16. Big bang or rolling?" },
+      { "user": "SRE", "text": "Rolling. We can use logical replication to avoid downtime." },
+      { "user": "Tech Lead", "text": "Let's do rolling with a 2-week canary on the read replicas first." }
+    ],
+    "decision": "Rolling migration with 2-week canary on read replicas",
+    "date": "2026-02-26"
+  },
+  {
+    "channel": "#product",
+    "thread_ts": "1709000000.000300",
+    "topic": "Mobile app priority",
+    "messages": [
+      { "user": "CEO", "text": "Should we build a native mobile app or improve the responsive web?" },
+      { "user": "PM", "text": "Our mobile traffic is 15% and all internal. Responsive web covers it." },
+      { "user": "Designer", "text": "Agree — responsive improvements are faster and cheaper." }
+    ],
+    "decision": "Invest in responsive web, defer native mobile app",
+    "date": "2026-02-25"
+  },
+  {
+    "channel": "#engineering",
+    "thread_ts": "1708950000.000400",
+    "topic": "Logging and observability stack",
+    "messages": [
+      { "user": "SRE", "text": "Datadog costs are spiking. Should we switch to Grafana Cloud or self-host?" },
+      { "user": "Tech Lead", "text": "Self-host is a maintenance burden we can't afford. Grafana Cloud is half the cost." },
+      { "user": "CTO", "text": "Go with Grafana Cloud. Revisit self-hosting when we have a dedicated platform team." }
+    ],
+    "decision": "Switch from Datadog to Grafana Cloud for observability",
+    "date": "2026-02-24"
+  },
+  {
+    "channel": "#security",
+    "thread_ts": "1708900000.000500",
+    "topic": "Third-party dependency policy",
+    "messages": [
+      { "user": "Security Lead", "text": "We need a policy on vetting new npm packages. Too many transitive deps." },
+      { "user": "Tech Lead", "text": "Proposal: max 3 new direct deps per PR, all must have >1k weekly downloads." },
+      { "user": "Security Lead", "text": "Add: no deps with unresolved CVEs. I'll set up socket.dev scanning." }
+    ],
+    "decision": "Max 3 new direct deps per PR, >1k weekly downloads, no unresolved CVEs, socket.dev scanning enabled",
+    "date": "2026-02-23"
+  }
+]

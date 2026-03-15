@@ -34,12 +34,12 @@ bash ~/.claude/team-context/journal-summary.sh --dir ~/.ai-memory/memory/journal
 
 Run setup.sh with `--update` to install it:
 ```bash
-bash ~/repos/greg/meridian/setup.sh --tool claude-code --update
+bash ~/repos/greg/wayfind/setup.sh --tool claude-code --update
 ```
 
 Or install manually:
 ```bash
-cp ~/repos/greg/meridian/journal-summary.sh ~/.claude/team-context/journal-summary.sh
+cp ~/repos/greg/wayfind/journal-summary.sh ~/.claude/team-context/journal-summary.sh
 chmod +x ~/.claude/team-context/journal-summary.sh
 ```
 

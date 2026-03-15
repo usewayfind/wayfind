@@ -235,8 +235,8 @@ check_team_versions() {
 
     # Check min_version from check-version command output
     local CHECK_OUTPUT=""
-    if [ -f "$HOME/repos/greg/meridian/bin/team-context.js" ]; then
-        CHECK_OUTPUT=$(node "$HOME/repos/greg/meridian/bin/team-context.js" check-version 2>&1 || true)
+    if [ -f "$HOME/repos/greg/wayfind/bin/team-context.js" ]; then
+        CHECK_OUTPUT=$(node "$HOME/repos/greg/wayfind/bin/team-context.js" check-version 2>&1 || true)
     elif command -v wayfind >/dev/null 2>&1; then
         CHECK_OUTPUT=$(wayfind check-version 2>&1 || true)
     fi

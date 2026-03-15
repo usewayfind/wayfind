@@ -36,7 +36,7 @@ Last updated: 2026-02-28
 
 | Project | Repo | Status | Next |
 |---------|------|--------|------|
-| Wayfind | ~/repos/meridian | Building sim harness | Finish scenarios |
+| Wayfind | ~/repos/wayfind | Building sim harness | Finish scenarios |
 
 ## Custom Section
 

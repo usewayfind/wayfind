@@ -1,8 +1,8 @@
-# Meridian FAQ & Known Issues
+# Wayfind FAQ & Known Issues
 
 ## Setup & Configuration
 
-### How do I set up Meridian for a new repo?
+### How do I set up Wayfind for a new repo?
 
 Run `/init-memory` in the repo. This creates `.claude/team-state.md` (shared, tracked) and `.claude/personal-state.md` (personal, gitignored), updates `.gitignore`, and registers the repo globally.
 
@@ -12,7 +12,7 @@ Run `/init-team`. It walks you through creating a team, setting up profiles, cre
 
 ### Can I be on multiple teams?
 
-Yes (as of v1.8.25). Register additional teams with `meridian context add <team-id> <path>`, then bind repos to specific teams with `meridian context bind <team-id>`. Journals and context sync route to the correct team automatically. See `meridian context list` for your current setup.
+Yes (as of v1.8.25). Register additional teams with `wayfind context add <team-id> <path>`, then bind repos to specific teams with `wayfind context bind <team-id>`. Journals and context sync route to the correct team automatically. See `wayfind context list` for your current setup.
 
 ### I enabled multi-team and journals are going to the wrong repo
 
@@ -20,12 +20,12 @@ As of v1.8.27, journal files are written per-team at extraction time (`YYYY-MM-D
 
 If you have existing journals from before multi-team, run the migration:
 ```
-meridian journal split --dry-run   # preview what will happen
-meridian journal split             # split existing files by team
-meridian journal sync              # push to correct team repos
+wayfind journal split --dry-run   # preview what will happen
+wayfind journal split             # split existing files by team
+wayfind journal sync              # push to correct team repos
 ```
 
-The split command parses `## Org/Repo —` headers in each entry and routes them using your repo→team bindings (`.claude/meridian.json`). Originals are backed up as `.bak` files.
+The split command parses `## Org/Repo —` headers in each entry and routes them using your repo→team bindings (`.claude/wayfind.json`). Originals are backed up as `.bak` files.
 
 ### What files should be gitignored?
 
@@ -35,7 +35,7 @@ These must be in `.gitignore` (NOT `.claude/` as a whole directory):
 .claude/state.md
 .claude/settings.local.json
 .claude/memory.db
-.claude/meridian.json
+.claude/wayfind.json
 ```
 
 `team-state.md` is intentionally tracked — it's shared context for your team.
@@ -54,7 +54,7 @@ If you're still seeing issues, make sure your container is running the latest im
 
 This usually means those journal entries haven't been indexed yet. Check:
 1. Were sessions running during that period? (`ls ~/.claude/memory/journal/`)
-2. Did journal sync run? (`meridian journal sync --since YYYY-MM-DD`)
+2. Did journal sync run? (`wayfind journal sync --since YYYY-MM-DD`)
 3. Is the container's cron job running? (Check Docker logs)
 
 ### How do I change when digests are sent?
@@ -67,11 +67,11 @@ Edit your `connectors.json` schedule, or ask your team admin to update the conta
 
 ### How do I prevent worker agents from flooding my journals?
 
-Set `MERIDIAN_SKIP_EXPORT=1` in the environment when spawning worker agents. Only the orchestrator agent (which doesn't have this var) will export decisions. Added in v1.8.21.
+Set `TEAM_CONTEXT_SKIP_EXPORT=1` in the environment when spawning worker agents. Only the orchestrator agent (which doesn't have this var) will export decisions. Added in v1.8.21.
 
-### Does Meridian support a push API for agent frameworks?
+### Does Wayfind support a push API for agent frameworks?
 
-Not yet. Currently decisions are extracted from Claude Code session transcripts. A push API (`meridian decision` CLI / HTTP endpoint) for framework-agnostic intake is being designed.
+Not yet. Currently decisions are extracted from Claude Code session transcripts. A push API (`wayfind decision` CLI / HTTP endpoint) for framework-agnostic intake is being designed.
 
 ---
 
@@ -93,7 +93,7 @@ A lightweight Haiku LLM call classifies extracted decisions. It flags: architect
 
 ### I'm using the GitHub Actions workflow for digests. What happens if I also deploy the container?
 
-You'll get duplicate digests. The container and the Actions workflow both generate and deliver independently. **Disable the workflow** when you deploy the container — delete or disable `.github/workflows/meridian-digest.yml` in your team-context repo.
+You'll get duplicate digests. The container and the Actions workflow both generate and deliver independently. **Disable the workflow** when you deploy the container — delete or disable `.github/workflows/wayfind-digest.yml` in your team-context repo.
 
 The container handles everything the workflow does plus signal connectors and the Slack bot, so there's no reason to keep both running.
 
@@ -103,10 +103,10 @@ The container handles everything the workflow does plus signal connectors and th
 
 ### I updated the npm package but my hooks are still old
 
-`npm update -g meridian-dev` only updates the package files. To deploy new hooks and commands to `~/.claude/hooks/`, run:
+`npm update -g wayfind` only updates the package files. To deploy new hooks and commands to `~/.claude/hooks/`, run:
 
 ```
-meridian update
+wayfind update
 ```
 
 This re-runs setup in update mode, overwriting hook scripts and commands while leaving your memory files untouched.
@@ -125,8 +125,8 @@ Anthropic model aliases like `claude-3-haiku-latest` can break. Always use exact
 - Extraction/shift detection: `claude-haiku-4-5-20251001`
 - Digest generation: `claude-sonnet-4-5-20250929`
 
-Override via env vars: `MERIDIAN_EXTRACTION_MODEL`, `MERIDIAN_SHIFT_MODEL`.
+Override via env vars: `TEAM_CONTEXT_EXTRACTION_MODEL`, `TEAM_CONTEXT_SHIFT_MODEL`.
 
 ### Journal dedup was fragile before v1.8.20
 
-Prior to v1.8.20, re-running `meridian reindex --export` could create duplicate journal entries because dedup only checked the first decision's title. Fixed — each decision is now individually deduped.
+Prior to v1.8.20, re-running `wayfind reindex --export` could create duplicate journal entries because dedup only checked the first decision's title. Fixed — each decision is now individually deduped.

@@ -6,7 +6,7 @@ RUN apk add --no-cache python3 make g++
 
 # Run as node user (uid 1000, gid 1000) — matches default Linux user on most hosts,
 # which allows git pull on bind-mounted team-context repos without permission issues.
-RUN mkdir -p /home/node/.claude/meridian/content-store \
+RUN mkdir -p /home/node/.claude/team-context/content-store \
     && chown -R node:node /home/node/.claude
 
 WORKDIR /app
@@ -27,11 +27,11 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
 # Drop to non-root (node user = uid 1000, matches most host users)
 USER node
 
-# Default mode: all-in-one (override via MERIDIAN_MODE)
-ENV MERIDIAN_MODE=all-in-one
+# Default mode: all-in-one (override via TEAM_CONTEXT_MODE)
+ENV TEAM_CONTEXT_MODE=all-in-one
 ENV NODE_ENV=production
 
 EXPOSE 3141
 
-ENTRYPOINT ["node", "bin/meridian.js"]
+ENTRYPOINT ["node", "bin/team-context.js"]
 CMD ["start"]

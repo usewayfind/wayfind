@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # Wayfind — Installer
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/leizerowicz/meridian/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/leizerowicz/wayfind/main/install.sh | bash
 #   WAYFIND_VERSION=v1.1.0 bash install.sh   # Install specific version
 #   bash install.sh --force                    # Force reinstall even if same version
 
 set -euo pipefail
 
-REPO="leizerowicz/meridian"
+REPO="leizerowicz/wayfind"
 VERSION="${WAYFIND_VERSION:-main}"
 TMP_DIR="$(mktemp -d)"
 FORCE=false
@@ -41,10 +41,10 @@ echo ""
 # Download
 if [ "$VERSION" = "main" ]; then
     DOWNLOAD_URL="https://github.com/$REPO/archive/refs/heads/main.tar.gz"
-    ARCHIVE_NAME="meridian-main"
+    ARCHIVE_NAME="wayfind-main"
 else
     DOWNLOAD_URL="https://github.com/$REPO/archive/refs/tags/${VERSION}.tar.gz"
-    ARCHIVE_NAME="meridian-${VERSION#v}"
+    ARCHIVE_NAME="wayfind-${VERSION#v}"
 fi
 
 ARCHIVE="$TMP_DIR/kit.tar.gz"

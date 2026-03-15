@@ -56,7 +56,7 @@ Last updated: 2026-02-28
 
 | Project | Repo | Status | Next |
 |---------|------|--------|------|
-| Wayfind | ~/repos/meridian | Building v1.1 | Ship simulation harness |
+| Wayfind | ~/repos/wayfind | Building v1.1 | Ship simulation harness |
 
 ## Memory Files (load on demand)
 
@@ -69,7 +69,7 @@ Last updated: 2026-02-28
 | Location | Covers |
 |----------|--------|
 | `~/.claude/state.md` | Admin work, non-repo tasks |
-| `~/repos/meridian/.claude/state.md` | Wayfind dev state |
+| `~/repos/wayfind/.claude/state.md` | Wayfind dev state |
 EOF
 
 # Verify personalized content

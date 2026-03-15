@@ -3,7 +3,7 @@
 # No Docker container needed — runs directly via npx.
 #
 # Setup:
-#   1. Copy this file to .github/workflows/meridian-digest.yml in your team-context repo
+#   1. Copy this file to .github/workflows/wayfind-digest.yml in your team-context repo
 #   2. Add these secrets to the repo (Settings → Secrets → Actions):
 #      - ANTHROPIC_API_KEY: Your Anthropic API key
 #      - SLACK_WEBHOOK_URL: Slack incoming webhook URL (optional — digests are also committed to the repo)

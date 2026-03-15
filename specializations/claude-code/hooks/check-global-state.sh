@@ -10,7 +10,7 @@
 set -euo pipefail
 
 # Use local wayfind checkout if available, otherwise try npx
-WAYFIND_BIN="$HOME/repos/greg/meridian/bin/team-context.js"
+WAYFIND_BIN="$HOME/repos/greg/wayfind/bin/team-context.js"
 if [ -f "$WAYFIND_BIN" ]; then
     node "$WAYFIND_BIN" status --write --quiet 2>/dev/null || true
     node "$WAYFIND_BIN" check-version 2>/dev/null || true

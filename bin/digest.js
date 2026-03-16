@@ -11,13 +11,32 @@ const HOME = process.env.HOME || process.env.USERPROFILE;
 const WAYFIND_DIR = path.join(HOME, '.claude', 'team-context');
 const ENV_FILE = path.join(WAYFIND_DIR, '.env');
 
-// Build regex for content-level filtering of excluded repos
+// Team repo allowlist — mirrors content-store.js logic for digest-time filtering.
+// When INCLUDE_REPOS is set, sections mentioning repos NOT on the list are removed.
+// Falls back to EXCLUDE_REPOS (legacy) for backward compatibility.
+const INCLUDE_REPOS_RAW = (process.env.TEAM_CONTEXT_INCLUDE_REPOS || '')
+  .split(',').map(r => r.trim()).filter(Boolean);
 const EXCLUDE_REPOS_RAW = (process.env.TEAM_CONTEXT_EXCLUDE_REPOS || '')
   .split(',').map(r => r.trim()).filter(Boolean);
 
+/**
+ * Check if a repo name matches the include list.
+ * Supports org/* wildcards.
+ */
+function isRepoIncluded(repo) {
+  if (INCLUDE_REPOS_RAW.length === 0) return true; // no filter = include all
+  const lower = repo.toLowerCase();
+  return INCLUDE_REPOS_RAW.some(pattern => {
+    const p = pattern.toLowerCase();
+    if (p.endsWith('/*')) {
+      return lower.startsWith(p.slice(0, -2) + '/');
+    }
+    return lower === p || lower.endsWith('/' + p) || lower.startsWith(p + '/');
+  });
+}
+
 function buildExcludePattern() {
   if (EXCLUDE_REPOS_RAW.length === 0) return null;
-  // Match repo names as whole words (case-insensitive)
   const escaped = EXCLUDE_REPOS_RAW.map(r => r.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
   return new RegExp(`\\b(${escaped.join('|')})\\b`, 'i');
 }
@@ -25,15 +44,33 @@ function buildExcludePattern() {
 const EXCLUDE_CONTENT_RE = buildExcludePattern();
 
 /**
- * Filter assembled content sections by removing any section whose body
- * mentions an excluded repo. Sections are separated by \n\n---\n\n.
+ * Filter assembled content sections by team boundaries.
+ * Sections are separated by \n\n---\n\n.
+ * If INCLUDE_REPOS is set: keep only sections mentioning included repos.
+ * Falls back to EXCLUDE_REPOS regex for backward compatibility.
  */
 function filterExcludedContent(content) {
-  if (!EXCLUDE_CONTENT_RE || !content) return content;
-  return content
-    .split('\n\n---\n\n')
-    .filter(section => !EXCLUDE_CONTENT_RE.test(section))
-    .join('\n\n---\n\n');
+  if (!content) return content;
+
+  const sections = content.split('\n\n---\n\n');
+
+  if (INCLUDE_REPOS_RAW.length > 0) {
+    // Allowlist mode: extract repo from section header (### DATE — REPO) and check
+    return sections.filter(section => {
+      const repoMatch = section.match(/^###\s+\S+\s+[—–]\s+(\S+)/);
+      if (!repoMatch) return true; // keep non-journal sections (signals, etc.)
+      return isRepoIncluded(repoMatch[1]);
+    }).join('\n\n---\n\n');
+  }
+
+  // Legacy: regex blocklist
+  if (EXCLUDE_CONTENT_RE) {
+    return sections
+      .filter(section => !EXCLUDE_CONTENT_RE.test(section))
+      .join('\n\n---\n\n');
+  }
+
+  return content;
 }
 
 // ── Env file helpers ────────────────────────────────────────────────────────
@@ -636,7 +673,7 @@ async function generateDigest(config, personaIds, sinceDate, onProgress) {
     journalContent = collectJournals(sinceDate, config.journal_dir);
   }
 
-  // Filter out content mentioning excluded repos (TEAM_CONTEXT_EXCLUDE_REPOS)
+  // Filter by team boundaries (TEAM_CONTEXT_INCLUDE_REPOS allowlist, falls back to EXCLUDE_REPOS)
   journalContent = filterExcludedContent(journalContent);
   signalContent = filterExcludedContent(signalContent);
 

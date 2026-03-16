@@ -1311,8 +1311,9 @@ async function runIndexConversationsWithExport(args, detectShifts = false) {
       }
     }
 
-    // Context shift detection — single classification per reindex run
-    if (detectShifts && stats.pendingExports && stats.pendingExports.length > 0) {
+    // Context shift detection — single classification per reindex run.
+    // Skip entirely when no new decisions were extracted (saves an LLM call).
+    if (detectShifts && stats.decisionsExtracted > 0 && stats.pendingExports && stats.pendingExports.length > 0) {
       console.log('');
       console.log('=== Context Shift Detection ===');
 

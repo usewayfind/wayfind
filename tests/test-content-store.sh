@@ -1192,6 +1192,50 @@ else
     _fail "queryMetadata excludes wayfind entries" "Got: $RESULT"
 fi
 
+# ── Section 12b: Repo allowlist (TEAM_CONTEXT_INCLUDE_REPOS) ──────────────────
+echo ""
+echo "Section 12b: Repo allowlist (TEAM_CONTEXT_INCLUDE_REPOS)"
+echo "=========================================================="
+
+# Test: INCLUDE_REPOS empty = include all
+RESULT=$(TEAM_CONTEXT_INCLUDE_REPOS="" TEAM_CONTEXT_EXCLUDE_REPOS="" TEAM_CONTEXT_SIMULATE=1 node -e "
+  const cs = require('./bin/content-store');
+  console.log(cs.isRepoExcluded('anything/repo') ? 'excluded' : 'included');
+")
+if [ "$RESULT" = "included" ]; then
+    _pass "empty INCLUDE_REPOS includes all"
+else
+    _fail "empty INCLUDE_REPOS includes all" "Expected 'included', got: $RESULT"
+fi
+
+# Test: INCLUDE_REPOS set = only matching repos pass
+RESULT=$(TEAM_CONTEXT_INCLUDE_REPOS="HopSkipInc/*,Doorbell/*" TEAM_CONTEXT_EXCLUDE_REPOS="" TEAM_CONTEXT_SIMULATE=1 node -e "
+  const cs = require('./bin/content-store');
+  const results = [
+    cs.isRepoExcluded('HopSkipInc/research') ? 'excluded' : 'included',
+    cs.isRepoExcluded('Doorbell/MVP') ? 'excluded' : 'included',
+    cs.isRepoExcluded('greg/wayfind') ? 'excluded' : 'included',
+    cs.isRepoExcluded('greg/NanoClaw') ? 'excluded' : 'included',
+  ];
+  console.log(results.join(','));
+")
+if [ "$RESULT" = "included,included,excluded,excluded" ]; then
+    _pass "INCLUDE_REPOS with wildcards"
+else
+    _fail "INCLUDE_REPOS with wildcards" "Expected 'included,included,excluded,excluded', got: $RESULT"
+fi
+
+# Test: INCLUDE_REPOS takes priority over EXCLUDE_REPOS
+RESULT=$(TEAM_CONTEXT_INCLUDE_REPOS="HopSkipInc/*" TEAM_CONTEXT_EXCLUDE_REPOS="research" TEAM_CONTEXT_SIMULATE=1 node -e "
+  const cs = require('./bin/content-store');
+  console.log(cs.isRepoExcluded('HopSkipInc/research') ? 'excluded' : 'included');
+")
+if [ "$RESULT" = "included" ]; then
+    _pass "INCLUDE_REPOS overrides EXCLUDE_REPOS"
+else
+    _fail "INCLUDE_REPOS overrides EXCLUDE_REPOS" "Expected 'included', got: $RESULT"
+fi
+
 # ── Summary ──────────────────────────────────────────────────────────────────
 
 echo ""

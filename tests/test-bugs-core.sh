@@ -19,6 +19,11 @@ assert_file_exists() { local desc="$1" file="$2"
   else FAIL=$((FAIL+1)); ERRORS+=("FAIL: $desc — file not found: $file"); echo "  ✗ $desc"; fi
 }
 
+assert_file_contains_pattern() { local desc="$1" needle="$2" file="$3"
+  if grep -qF "$needle" "$file" 2>/dev/null; then PASS=$((PASS+1)); echo "  ✓ $desc"
+  else FAIL=$((FAIL+1)); ERRORS+=("FAIL: $desc — '$needle' not found in $file"); echo "  ✗ $desc"; fi
+}
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 # Test #6: .gitattributes exists
@@ -62,7 +67,7 @@ assert_eq "no .ai-memory references remain after sed" "0" "$REMAINING"
 echo ""
 echo "Issue #2: settings.json merge"
 assert_contains "setup.sh has python3 merge" "python3" "$(cat "$SCRIPT_DIR/setup.sh")"
-assert_contains "setup.sh has setdefault" "setdefault" "$(cat "$SCRIPT_DIR/setup.sh")"
+assert_file_contains_pattern "setup.sh has setdefault" "setdefault" "$SCRIPT_DIR/setup.sh"
 assert_contains "setup.sh has atomic temp file write" "TMP_SETTINGS" "$(cat "$SCRIPT_DIR/setup.sh")"
 assert_contains "setup.sh has fallback warn on failure" "Could not auto-merge" "$(cat "$SCRIPT_DIR/setup.sh")"
 

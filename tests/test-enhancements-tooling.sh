@@ -169,10 +169,10 @@ INSTALLER="$ROOT_DIR/install.sh"
 
 assert_file_exists "$INSTALLER" "install.sh"
 
-assert_file_contains "$INSTALLER" "TEAM_CONTEXT_VERSION" \
-    "install.sh supports TEAM_CONTEXT_VERSION env var"
+assert_file_contains "$INSTALLER" "WAYFIND_VERSION" \
+    "install.sh supports WAYFIND_VERSION env var"
 
-assert_file_contains "$INSTALLER" 'VERSION="${TEAM_CONTEXT_VERSION:-main}"' \
+assert_file_contains "$INSTALLER" 'VERSION="${WAYFIND_VERSION:-main}"' \
     "install.sh defaults VERSION to main"
 
 assert_file_contains "$INSTALLER" "refs/tags/" \
@@ -193,13 +193,13 @@ assert_file_contains "$INSTALLER" "trap cleanup EXIT" \
 assert_file_exists "$ROOT_DIR/VERSIONS.md" \
     "VERSIONS.md exists"
 
-assert_file_contains "$ROOT_DIR/VERSIONS.md" "TEAM_CONTEXT_VERSION" \
-    "VERSIONS.md documents TEAM_CONTEXT_VERSION usage"
+assert_file_contains "$ROOT_DIR/VERSIONS.md" "WAYFIND_VERSION" \
+    "VERSIONS.md documents WAYFIND_VERSION usage"
 
 assert_file_contains "$ROOT_DIR/VERSIONS.md" "git tag -a" \
     "VERSIONS.md documents tagging process"
 
-assert_file_contains "$ROOT_DIR/BOOTSTRAP_PROMPT.md" "TEAM_CONTEXT_VERSION" \
+assert_file_contains "$ROOT_DIR/BOOTSTRAP_PROMPT.md" "WAYFIND_VERSION" \
     "BOOTSTRAP_PROMPT.md documents version pinning"
 
 echo ""
@@ -242,11 +242,11 @@ assert_file_contains "$ROOT_DIR/setup.sh" ".wayfind-version" \
     "setup.sh writes .wayfind-version file"
 
 # setup.sh shows upgrade messaging
-assert_file_contains "$ROOT_DIR/setup.sh" "TEAM_CONTEXT_OLD_VERSION" \
-    "setup.sh reads TEAM_CONTEXT_OLD_VERSION env var"
+assert_file_contains "$ROOT_DIR/setup.sh" "WAYFIND_OLD_VERSION" \
+    "setup.sh reads WAYFIND_OLD_VERSION env var"
 
-assert_file_contains "$ROOT_DIR/setup.sh" "TEAM_CONTEXT_NEW_VERSION" \
-    "setup.sh reads TEAM_CONTEXT_NEW_VERSION env var"
+assert_file_contains "$ROOT_DIR/setup.sh" "WAYFIND_NEW_VERSION" \
+    "setup.sh reads WAYFIND_NEW_VERSION env var"
 
 # bin/team-context.js has version command
 assert_file_contains "$ROOT_DIR/bin/team-context.js" "version" \

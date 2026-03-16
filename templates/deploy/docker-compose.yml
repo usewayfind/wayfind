@@ -18,7 +18,9 @@ services:
       SLACK_DIGEST_CHANNEL: ${SLACK_DIGEST_CHANNEL:-}
       TEAM_CONTEXT_SLACK_WEBHOOK: ${TEAM_CONTEXT_SLACK_WEBHOOK:-}
 
-      # Exclude repos from digests/queries (comma-separated, case-insensitive)
+      # Team repo allowlist (recommended over EXCLUDE_REPOS)
+      TEAM_CONTEXT_INCLUDE_REPOS: ${TEAM_CONTEXT_INCLUDE_REPOS:-}
+      # DEPRECATED: Blocklist approach — use INCLUDE_REPOS instead
       TEAM_CONTEXT_EXCLUDE_REPOS: ${TEAM_CONTEXT_EXCLUDE_REPOS:-}
 
       # Telemetry (opt-in, sends anonymous usage data to improve Wayfind)

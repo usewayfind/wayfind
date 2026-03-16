@@ -22,19 +22,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          registry-url: https://registry.npmjs.org
 
-      - name: Debug npm config
+      - name: Configure npm for OIDC trusted publishing
         run: |
-          echo "npm version: $(npm --version)"
-          echo "node version: $(node --version)"
-          npm config list
-          echo "---"
-          cat ~/.npmrc 2>/dev/null || echo "no ~/.npmrc"
-          cat .npmrc 2>/dev/null || echo "no .npmrc"
-          echo "---"
-          echo "NPM_CONFIG_USERCONFIG=$NPM_CONFIG_USERCONFIG"
-          cat "$NPM_CONFIG_USERCONFIG" 2>/dev/null || echo "no userconfig"
+          echo "registry=https://registry.npmjs.org/" > ~/.npmrc
 
       - name: Check if version already published
         id: check

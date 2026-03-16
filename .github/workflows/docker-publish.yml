@@ -1,46 +1,60 @@
-name: Publish Docker image
+name: Build and publish Docker image
 
 on:
-  workflow_dispatch:
   push:
     branches: [main]
     paths:
+      - 'package.json'
       - 'Dockerfile'
       - 'bin/**'
-      - 'package.json'
       - 'templates/**'
       - 'specializations/**'
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: usewayfind/wayfind
+  IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  publish:
+  build-and-push:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
       packages: write
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Get version from package.json
-        id: version
-        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+      - name: Read version from package.json
+        id: pkg
+        run: echo "version=$(node -p 'require("./package.json").version')" >> "$GITHUB_OUTPUT"
 
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
+      - name: Create git tag if missing
+        run: |
+          TAG="v${{ steps.pkg.outputs.version }}"
+          if ! git ls-remote --tags origin "$TAG" | grep -q "$TAG"; then
+            git tag "$TAG"
+            git push origin "$TAG"
+          else
+            echo "Tag $TAG already exists — skipping"
+          fi
+
+      - uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push
-        uses: docker/build-push-action@v6
+      - uses: docker/metadata-action@v5
+        id: meta
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=${{ steps.pkg.outputs.version }}
+            type=raw,value=latest
+
+      - uses: docker/build-push-action@v6
         with:
           context: .
           push: true
-          tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:v${{ steps.version.outputs.version }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}

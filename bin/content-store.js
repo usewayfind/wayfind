@@ -39,11 +39,7 @@ const ENTRY_HEADER_RE = /^##\s+(.+?)\s+[—–]\s+(.+)$/;
 const FIELD_RE = /^\*\*([^*:]+):\*\*\s*(.*)$/;
 const DATE_FILE_RE = /^(\d{4}-\d{2}-\d{2})(?:-([a-z0-9._-]+))?\.md$/;
 
-// Repo exclusion list (comma-separated, case-insensitive, supports org/repo or just repo).
-// NOTE: Team boundaries are now enforced at export/sync time via opt-in .claude/wayfind.json
-// bindings (see buildRepoToTeamResolver in team-context.js). This env var is still useful
-// for filtering repos out of indexing and queries entirely, but is no longer needed for
-// preventing unbound repos from leaking into team digests.
+// Repo exclusion list (comma-separated, case-insensitive, supports org/repo or just repo)
 const EXCLUDE_REPOS = (process.env.TEAM_CONTEXT_EXCLUDE_REPOS || '')
   .split(',').map(r => r.trim().toLowerCase()).filter(Boolean);
 
@@ -1564,7 +1560,6 @@ async function indexConversationsWithExport(options = {}) {
   // Write pending exports — route to per-team journal files
   for (const { date, repo, decisions } of pendingExports) {
     const teamId = repoToTeam(repo);
-    if (!teamId) continue;  // Unbound repo — skip export (opt-in via .claude/wayfind.json)
     exportDecisionsAsJournal(date, repo, decisions, exportDir, teamId, author);
     exported += decisions.length;
     for (const d of decisions) {

@@ -23,26 +23,6 @@ If the old protocol is not detected, skip this step silently.
 - Check if it's a git repo (`ls .git` or `git rev-parse --show-toplevel`)
 - Read `~/.claude/global-state.md` to check if this repo is already registered
 
-## Step 1.5: Bind repo to team
-
-Check if `.claude/wayfind.json` already exists in the repo.
-
-**If it already exists:** Read it, report the current team binding ("Already bound to team: <team name>"), and ask: "Want to change the team binding?" If the user says no, skip to Step 2. If yes, proceed with team selection below (overwrite the file).
-
-**If it does not exist:** Read `~/.claude/team-context/context.json` to get the list of configured teams.
-
-- **No teams configured (file missing or empty `teams` array):** Tell the user: "No teams configured yet. Run `/init-team` first to set up a team, then re-run `/init-memory`." **Stop here — do not continue to later steps.**
-
-- **Exactly one team:** Auto-bind to that team. Create `.claude/wayfind.json`:
-  ```json
-  {"team_id": "<teamId>", "bound_at": "<ISO 8601 timestamp>"}
-  ```
-  Report: "Bound to team: <team name> (auto-selected, only team configured)"
-
-- **Multiple teams:** List the teams by name and ask the user which one this repo belongs to. Wait for their answer. Create `.claude/wayfind.json` with their chosen team's ID. Report: "Bound to team: <team name>"
-
-**Verify `.gitignore` coverage:** `.claude/wayfind.json` must be gitignored. Step 3 already includes it in the required entries — confirm this is still the case. If someone removed it, Step 3 will restore it.
-
 ## Step 2: Create state files (if missing)
 
 This repo uses TWO state files with different visibility:
@@ -160,7 +140,6 @@ Add the repo's state files to the State Files table if missing:
 ## Step 6: Report
 
 Tell the user:
-- `.claude/wayfind.json` — bound to team: <team name> (or already bound)
 - `.claude/team-state.md` — created or already existed (committed to git, shared with team)
 - `.claude/personal-state.md` — created or already existed (gitignored, personal only)
 - `.gitignore` — updated or already correct

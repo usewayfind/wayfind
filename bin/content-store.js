@@ -39,11 +39,14 @@ const ENTRY_HEADER_RE = /^##\s+(.+?)\s+[—–]\s+(.+)$/;
 const FIELD_RE = /^\*\*([^*:]+):\*\*\s*(.*)$/;
 const DATE_FILE_RE = /^(\d{4}-\d{2}-\d{2})(?:-([a-z0-9._-]+))?\.md$/;
 
-// Repo exclusion list (comma-separated, case-insensitive, supports org/repo or just repo).
-// NOTE: Team boundaries are now enforced at export/sync time via opt-in .claude/wayfind.json
-// bindings (see buildRepoToTeamResolver in team-context.js). This env var is still useful
-// for filtering repos out of indexing and queries entirely, but is no longer needed for
-// preventing unbound repos from leaking into team digests.
+// Team repo allowlist — when set, only entries from matching repos are indexed/queried.
+// Replaces the old TEAM_CONTEXT_EXCLUDE_REPOS blocklist approach.
+// Format: comma-separated, supports org/* wildcards (e.g., "HopSkipInc/*,Doorbell/*")
+const INCLUDE_REPOS = (process.env.TEAM_CONTEXT_INCLUDE_REPOS || '')
+  .split(',').map(r => r.trim().toLowerCase()).filter(Boolean);
+
+// DEPRECATED: Legacy blocklist — use TEAM_CONTEXT_INCLUDE_REPOS instead.
+// Still read for backward compatibility during migration.
 const EXCLUDE_REPOS = (process.env.TEAM_CONTEXT_EXCLUDE_REPOS || '')
   .split(',').map(r => r.trim().toLowerCase()).filter(Boolean);
 
@@ -52,13 +55,33 @@ const DRIFT_POSITIVE = ['drift', 'drifted', 'tangent', 'pivoted', 'sidetracked',
 const DRIFT_NEGATIVE = ['no drift', 'no tangent', 'on track', 'focused', 'laser focused', 'stayed focused'];
 
 /**
- * Check if a repo name matches the exclusion list.
- * Matches against repo name alone or org/repo format.
+ * Check if a repo should be filtered out.
+ * If INCLUDE_REPOS is set: only allow repos matching the allowlist.
+ * If only EXCLUDE_REPOS is set (legacy): block repos on the blocklist.
+ * Supports org/* wildcard patterns.
  */
 function isRepoExcluded(repo) {
-  if (!EXCLUDE_REPOS.length || !repo) return false;
+  if (!repo) return (INCLUDE_REPOS.length > 0); // exclude null repo only when allowlist active
   const lower = repo.toLowerCase();
-  return EXCLUDE_REPOS.some(ex => lower === ex || lower.endsWith('/' + ex) || lower.startsWith(ex + '/'));
+
+  // Allowlist takes priority — if set, only matching repos pass
+  if (INCLUDE_REPOS.length > 0) {
+    return !INCLUDE_REPOS.some(pattern => {
+      if (pattern.endsWith('/*')) {
+        // org/* wildcard — match org prefix
+        const org = pattern.slice(0, -2);
+        return lower.startsWith(org + '/');
+      }
+      return lower === pattern || lower.endsWith('/' + pattern) || lower.startsWith(pattern + '/');
+    });
+  }
+
+  // Legacy blocklist fallback
+  if (EXCLUDE_REPOS.length > 0) {
+    return EXCLUDE_REPOS.some(ex => lower === ex || lower.endsWith('/' + ex) || lower.startsWith(ex + '/'));
+  }
+
+  return false;
 }
 
 // ── Journal parsing ─────────────────────────────────────────────────────────
@@ -1974,6 +1997,7 @@ module.exports = {
   saveConversationIndex: (storePath, convIndex) => getBackend(storePath || DEFAULT_STORE_PATH).saveConversationIndex(convIndex),
 
   // Filtering
+  isRepoExcluded,
   applyFilters,
 
   // Core operations

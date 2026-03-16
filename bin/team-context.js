@@ -4004,6 +4004,7 @@ const COMMANDS = {
         'bin/', 'templates/', 'specializations/', 'tests/', 'simulation/',
         '.github/', 'Dockerfile', 'package.json', 'setup.sh', 'install.sh',
         'uninstall.sh', 'doctor.sh', 'journal-summary.sh', 'BOOTSTRAP_PROMPT.md',
+        '.gitattributes', '.gitignore', 'VERSIONS.md',
       ];
 
       // Workflows that only belong on the private repo

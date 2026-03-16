@@ -1175,8 +1175,11 @@ async function runReindex(args) {
 /**
  * Build a repo-to-team resolver function.
  * Scans context.json teams and all known repo bindings to map repo names → team IDs.
- * Falls back to default team if no binding is found.
- * @returns {function(string): string|null} - Maps repo name (e.g. "acme-corp/api") to team ID
+ * Returns null for unbound repos — they are invisible to export/sync.
+ * NOTE: config.default is intentionally NOT used here. The "default" field in context.json
+ * exists for the `context bind` command's UX (pre-selecting a team), not for implicit
+ * routing of unknown repos. Repos must opt in via .claude/wayfind.json to participate.
+ * @returns {function(string): string|null} - Maps repo name (e.g. "acme-corp/api") to team ID, or null if unbound
  */
 function buildRepoToTeamResolver() {
   const config = readContextConfig();
@@ -1228,8 +1231,11 @@ function buildRepoToTeamResolver() {
       if (repoName.startsWith(key + '/') || repoName === key) return teamId;
     }
 
-    // Fall back to default team
-    return config.default || null;
+    // No binding found — return null so unbound repos don't leak into
+    // the default team's digest. Repos must have .claude/wayfind.json to
+    // be routed. The "default" team in context.json is for the `context bind`
+    // command's UX, not for implicit routing of unknown repos.
+    return null;
   };
 }
 
@@ -1850,7 +1856,7 @@ function journalSplitByTeam(args) {
  * Sync local journals to team-context repo(s) journals/ directory.
  * Routes per-team journal files (YYYY-MM-DD-{teamId}.md or YYYY-MM-DD-{author}-{teamId}.md)
  * to the correct team-context repo based on the team ID suffix.
- * Legacy files without a team suffix go to the default team.
+ * Files without a team suffix are skipped — repos must opt in via .claude/wayfind.json.
  * Usage: wayfind journal sync [--dir <path>] [--since YYYY-MM-DD]
  */
 function journalSync(args) {
@@ -1906,8 +1912,6 @@ function journalSync(args) {
 
   // Categorize files: { teamId → [{ file, srcPath }] }
   const teamFiles = {};
-  const defaultTeam = config.default || null;
-
   for (const file of allFiles) {
     // Extract date for --since filtering
     const dateMatch = file.match(/^(\d{4}-\d{2}-\d{2})/);
@@ -1932,8 +1936,7 @@ function journalSync(args) {
       }
     }
 
-    // No team suffix → route to default team
-    if (!teamId) teamId = defaultTeam;
+    // No team suffix → skip. Repos must opt in via .claude/wayfind.json.
     if (!teamId) continue;
 
     if (!teamFiles[teamId]) teamFiles[teamId] = [];
@@ -3999,9 +4002,12 @@ const COMMANDS = {
       // Files and directories to sync
       const syncItems = [
         'bin/', 'templates/', 'specializations/', 'tests/', 'simulation/',
-        'Dockerfile', 'package.json', 'setup.sh', 'install.sh', 'uninstall.sh',
-        'doctor.sh', 'journal-summary.sh', 'BOOTSTRAP_PROMPT.md',
+        '.github/', 'Dockerfile', 'package.json', 'setup.sh', 'install.sh',
+        'uninstall.sh', 'doctor.sh', 'journal-summary.sh', 'BOOTSTRAP_PROMPT.md',
       ];
+
+      // Workflows that only belong on the private repo
+      const privateOnlyWorkflows = ['sync-public.yml', 'simulation.yml'];
 
       // Also sync public-staging docs if they exist
       const publicDocsDir = path.join(ROOT, 'public-staging', 'docs');
@@ -4022,9 +4028,17 @@ const COMMANDS = {
         }
       }
 
-      // Sync public-staging docs to docs/
-      if (fs.existsSync(publicDocsDir)) {
-        spawnSync('rsync', ['-a', '--delete', publicDocsDir + '/', path.join(tmpDir, 'docs') + '/'], { stdio: 'inherit' });
+      // Remove private-only workflows from the public copy
+      for (const wf of privateOnlyWorkflows) {
+        const wfPath = path.join(tmpDir, '.github', 'workflows', wf);
+        if (fs.existsSync(wfPath)) fs.unlinkSync(wfPath);
+      }
+
+      // Sync public-staging/ → public repo root (recursive)
+      // This overlays LICENSE, README, CHANGELOG, SECURITY, CONTRIBUTING, docs/, etc.
+      const publicStagingDir = path.join(ROOT, 'public-staging');
+      if (fs.existsSync(publicStagingDir)) {
+        spawnSync('rsync', ['-a', publicStagingDir + '/', tmpDir + '/'], { stdio: 'inherit' });
       }
 
       // Show what changed
@@ -4052,11 +4066,9 @@ const COMMANDS = {
       }
 
       console.log('Pushing to usewayfind/wayfind...');
-      // Use GH_TOKEN to ensure correct account (gh multi-account may route wrong)
-      const tokenResult = spawnSync('gh', ['auth', 'token'], { stdio: 'pipe' });
-      const pushEnv = { ...process.env };
-      if (tokenResult.stdout) pushEnv.GH_TOKEN = tokenResult.stdout.toString().trim();
-      const pushResult = spawnSync('git', ['push'], { cwd: tmpDir, stdio: 'inherit', env: pushEnv });
+      // Ensure SSH remote for correct multi-account routing
+      spawnSync('git', ['remote', 'set-url', 'origin', 'git@github-personal:usewayfind/wayfind.git'], { cwd: tmpDir });
+      const pushResult = spawnSync('git', ['push'], { cwd: tmpDir, stdio: 'inherit' });
       if (pushResult.status !== 0) {
         console.error('Push failed — check your access to usewayfind/wayfind');
         process.exit(1);

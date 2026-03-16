@@ -8,7 +8,7 @@
 
 ## Accessibility
 - Venue search results page still missing ARIA labels on filter controls (Issue #291, open 34 days). Blocks VPAT compliance update.
-- New analytics dashboard tables (AnalyticsService migration) have no responsive breakpoints. Unusable on tablet viewport.
+- New analytics dashboard tables (analytics-service migration) have no responsive breakpoints. Unusable on tablet viewport.
 
 ## Design Debt
 - 3 different date picker components in use across EventSubscription, ImportExport, and ReportService. Consolidation to shared component overdue.

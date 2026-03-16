@@ -1,5 +1,9 @@
 # Claude Code Specialization
 
+> **Note:** The canonical plugin source is now in `plugin/` at the repo root.
+> This `specializations/claude-code/` directory is kept for backward compatibility
+> with `setup.sh` but `plugin/` is the source of truth for Claude Code integration.
+
 This directory contains everything needed to wire Wayfind into Claude Code specifically.
 
 ## What's Different About Claude Code

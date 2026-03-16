@@ -11,7 +11,7 @@
     "labels": [{ "name": "bug" }, { "name": "mobile" }],
     "assignees": [{ "login": "nick-w" }],
     "comments": 3,
-    "html_url": "https://github.com/HopSkipInc/EventSubscriptionService/issues/42"
+    "html_url": "https://github.com/acme-corp/event-service/issues/42"
   },
   {
     "id": 1002,
@@ -25,7 +25,7 @@
     "labels": [{ "name": "enhancement" }, { "name": "priority:high" }],
     "assignees": [{ "login": "swetha-r" }],
     "comments": 5,
-    "html_url": "https://github.com/HopSkipInc/ImportExportService/issues/58"
+    "html_url": "https://github.com/acme-corp/import-service/issues/58"
   },
   {
     "id": 1003,
@@ -39,7 +39,7 @@
     "labels": [{ "name": "documentation" }],
     "assignees": [{ "login": "nick-w" }],
     "comments": 2,
-    "html_url": "https://github.com/HopSkipInc/EventSubscriptionService/issues/71"
+    "html_url": "https://github.com/acme-corp/event-service/issues/71"
   },
   {
     "id": 1004,
@@ -53,7 +53,7 @@
     "labels": [{ "name": "bug" }, { "name": "priority:high" }],
     "assignees": [{ "login": "katelyn-n" }],
     "comments": 7,
-    "html_url": "https://github.com/HopSkipInc/AnalyticsService/issues/15"
+    "html_url": "https://github.com/acme-corp/analytics-service/issues/15"
   },
   {
     "id": 1005,
@@ -67,7 +67,7 @@
     "labels": [{ "name": "question" }],
     "assignees": [],
     "comments": 0,
-    "html_url": "https://github.com/HopSkipInc/ImportExportService/issues/33"
+    "html_url": "https://github.com/acme-corp/import-service/issues/33"
   },
   {
     "id": 1006,
@@ -81,7 +81,7 @@
     "labels": [{ "name": "enhancement" }],
     "assignees": [{ "login": "greg-l" }],
     "comments": 4,
-    "html_url": "https://github.com/HopSkipInc/EventSubscriptionService/issues/89"
+    "html_url": "https://github.com/acme-corp/event-service/issues/89"
   },
   {
     "id": 1007,
@@ -95,7 +95,7 @@
     "labels": [{ "name": "bug" }],
     "assignees": [],
     "comments": 0,
-    "html_url": "https://github.com/HopSkipInc/AnalyticsService/issues/22"
+    "html_url": "https://github.com/acme-corp/analytics-service/issues/22"
   },
   {
     "id": 1008,
@@ -109,7 +109,7 @@
     "labels": [{ "name": "enhancement" }],
     "assignees": [{ "login": "katelyn-n" }],
     "comments": 1,
-    "html_url": "https://github.com/HopSkipInc/AnalyticsService/issues/44"
+    "html_url": "https://github.com/acme-corp/analytics-service/issues/44"
   },
   {
     "id": 1009,
@@ -123,7 +123,7 @@
     "labels": [{ "name": "bug" }, { "name": "priority:high" }],
     "assignees": [{ "login": "sean-m" }],
     "comments": 6,
-    "html_url": "https://github.com/HopSkipInc/EventSubscriptionService/issues/95"
+    "html_url": "https://github.com/acme-corp/event-service/issues/95"
   },
   {
     "id": 1010,
@@ -137,6 +137,6 @@
     "labels": [{ "name": "documentation" }],
     "assignees": [{ "login": "greg-l" }],
     "comments": 1,
-    "html_url": "https://github.com/HopSkipInc/ImportExportService/issues/61"
+    "html_url": "https://github.com/acme-corp/import-service/issues/61"
   }
 ]

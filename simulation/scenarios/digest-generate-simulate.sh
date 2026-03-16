@@ -29,7 +29,7 @@ cat > "$TEST_HOME/.claude/team-context/connectors.json" << 'EOF'
 {
   "github": {
     "transport": "simulate",
-    "repos": [{ "owner": "HopSkipInc", "repo": "EventSubscriptionService" }],
+    "repos": [{ "owner": "acme-corp", "repo": "event-service" }],
     "last_pull": null
   },
   "digest": {
@@ -61,7 +61,7 @@ cat > "$TEST_HOME/.claude/team-context/signals/github/2026-02-28-summary.md" << 
 
 ## Per-Repo Highlights
 
-### HopSkipInc/EventSubscriptionService
+### acme-corp/event-service
 - 3 PRs, 5 issues, 14 CI runs
 - 1 PR potentially blocked (open >5 days)
 
@@ -75,7 +75,7 @@ SIGNAL_EOF
 mkdir -p "$TEST_HOME/.claude/memory/journal"
 
 cat > "$TEST_HOME/.claude/memory/journal/2026-02-24.md" << 'JOURNAL_EOF'
-## EventSubscriptionService — Config-as-Code QA Verification
+## event-service — Config-as-Code QA Verification
 **Why:** Verify config-as-code changes work correctly in QA environment
 **What:** Tested all 7 fields in QA, found URL formatting issue, fixed in PR #2465.
 **Outcome:** QA verified, ready for review
@@ -93,7 +93,7 @@ cat > "$TEST_HOME/.claude/memory/journal/2026-02-25.md" << 'JOURNAL_EOF'
 JOURNAL_EOF
 
 cat > "$TEST_HOME/.claude/memory/journal/2026-02-26.md" << 'JOURNAL_EOF'
-## AnalyticsService — Auth Overhaul
+## analytics-service — Auth Overhaul
 **Why:** Fix authentication for gold table queries
 **What:** Overhauled auth module, added MI grants, tested overnight refresh.
 **Outcome:** Auth working, MonthlyRefresh pre-flight passed.

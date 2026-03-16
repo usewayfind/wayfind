@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # Wayfind — Installer
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/leizerowicz/wayfind/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/usewayfind/wayfind/main/install.sh | bash
 #   WAYFIND_VERSION=v1.1.0 bash install.sh   # Install specific version
 #   bash install.sh --force                    # Force reinstall even if same version
 
 set -euo pipefail
 
-REPO="leizerowicz/wayfind"
+REPO="usewayfind/wayfind"
 VERSION="${WAYFIND_VERSION:-main}"
 TMP_DIR="$(mktemp -d)"
 FORCE=false

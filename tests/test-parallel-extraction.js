@@ -16,11 +16,22 @@ const fs = require('fs');
 const os = require('os');
 const crypto = require('crypto');
 
-// Load API key
-const envFile = fs.readFileSync(path.join(process.env.HOME, '.config/hopskip/.env'), 'utf8');
-for (const line of envFile.split('\n')) {
-  const m = line.match(/^(export\s+)?(\w+)=(.+)$/);
-  if (m) process.env[m[2]] = m[3].replace(/^["']|["']$/g, '');
+// Load API key from standard locations
+const envPaths = [
+  process.env.TEAM_CONTEXT_ENV_FILE,
+  path.join(process.env.HOME, '.config/wayfind/.env'),
+  path.join(process.env.HOME, '.env'),
+].filter(Boolean);
+
+const envPath = envPaths.find(p => fs.existsSync(p));
+if (envPath) {
+  for (const line of fs.readFileSync(envPath, 'utf8').split('\n')) {
+    const m = line.match(/^(export\s+)?(\w+)=(.+)$/);
+    if (m) process.env[m[2]] = m[3].replace(/^["']|["']$/g, '');
+  }
+} else if (!process.env.ANTHROPIC_API_KEY) {
+  console.error('No API key found. Set ANTHROPIC_API_KEY or create ~/.config/wayfind/.env');
+  process.exit(1);
 }
 
 const contentStore = require('../bin/content-store');

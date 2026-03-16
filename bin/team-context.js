@@ -1175,8 +1175,11 @@ async function runReindex(args) {
 /**
  * Build a repo-to-team resolver function.
  * Scans context.json teams and all known repo bindings to map repo names → team IDs.
- * Falls back to default team if no binding is found.
- * @returns {function(string): string|null} - Maps repo name (e.g. "acme-corp/api") to team ID
+ * Returns null for unbound repos — they are invisible to export/sync.
+ * NOTE: config.default is intentionally NOT used here. The "default" field in context.json
+ * exists for the `context bind` command's UX (pre-selecting a team), not for implicit
+ * routing of unknown repos. Repos must opt in via .claude/wayfind.json to participate.
+ * @returns {function(string): string|null} - Maps repo name (e.g. "acme-corp/api") to team ID, or null if unbound
  */
 function buildRepoToTeamResolver() {
   const config = readContextConfig();
@@ -1228,8 +1231,11 @@ function buildRepoToTeamResolver() {
       if (repoName.startsWith(key + '/') || repoName === key) return teamId;
     }
 
-    // Fall back to default team
-    return config.default || null;
+    // No binding found — return null so unbound repos don't leak into
+    // the default team's digest. Repos must have .claude/wayfind.json to
+    // be routed. The "default" team in context.json is for the `context bind`
+    // command's UX, not for implicit routing of unknown repos.
+    return null;
   };
 }
 
@@ -1850,7 +1856,7 @@ function journalSplitByTeam(args) {
  * Sync local journals to team-context repo(s) journals/ directory.
  * Routes per-team journal files (YYYY-MM-DD-{teamId}.md or YYYY-MM-DD-{author}-{teamId}.md)
  * to the correct team-context repo based on the team ID suffix.
- * Legacy files without a team suffix go to the default team.
+ * Files without a team suffix are skipped — repos must opt in via .claude/wayfind.json.
  * Usage: wayfind journal sync [--dir <path>] [--since YYYY-MM-DD]
  */
 function journalSync(args) {
@@ -1906,8 +1912,6 @@ function journalSync(args) {
 
   // Categorize files: { teamId → [{ file, srcPath }] }
   const teamFiles = {};
-  const defaultTeam = config.default || null;
-
   for (const file of allFiles) {
     // Extract date for --since filtering
     const dateMatch = file.match(/^(\d{4}-\d{2}-\d{2})/);
@@ -1932,8 +1936,7 @@ function journalSync(args) {
       }
     }
 
-    // No team suffix → route to default team
-    if (!teamId) teamId = defaultTeam;
+    // No team suffix → skip. Repos must opt in via .claude/wayfind.json.
     if (!teamId) continue;
 
     if (!teamFiles[teamId]) teamFiles[teamId] = [];
@@ -3977,7 +3980,7 @@ const COMMANDS = {
     desc: 'Sync code to the public usewayfind/wayfind repo',
     run: () => {
       const tmpDir = path.join(os.tmpdir(), 'wayfind-public-sync');
-      const publicRepo = 'https://github.com/usewayfind/wayfind.git';
+      const publicRepo = process.env.WAYFIND_PUBLIC_REPO || 'https://github.com/usewayfind/wayfind.git';
 
       // Clone or pull public repo
       if (fs.existsSync(tmpDir)) {
@@ -3999,9 +4002,12 @@ const COMMANDS = {
       // Files and directories to sync
       const syncItems = [
         'bin/', 'templates/', 'specializations/', 'tests/', 'simulation/',
-        'Dockerfile', 'package.json', 'setup.sh', 'install.sh', 'uninstall.sh',
-        'doctor.sh', 'journal-summary.sh', 'BOOTSTRAP_PROMPT.md',
+        '.github/', 'Dockerfile', 'package.json', 'setup.sh', 'install.sh',
+        'uninstall.sh', 'doctor.sh', 'journal-summary.sh', 'BOOTSTRAP_PROMPT.md',
       ];
+
+      // Workflows that only belong on the private repo
+      const privateOnlyWorkflows = ['sync-public.yml', 'simulation.yml'];
 
       // Also sync public-staging docs if they exist
       const publicDocsDir = path.join(ROOT, 'public-staging', 'docs');
@@ -4022,10 +4028,85 @@ const COMMANDS = {
         }
       }
 
-      // Sync public-staging docs to docs/
-      if (fs.existsSync(publicDocsDir)) {
-        spawnSync('rsync', ['-a', '--delete', publicDocsDir + '/', path.join(tmpDir, 'docs') + '/'], { stdio: 'inherit' });
+      // Remove private-only workflows from the public copy
+      for (const wf of privateOnlyWorkflows) {
+        const wfPath = path.join(tmpDir, '.github', 'workflows', wf);
+        if (fs.existsSync(wfPath)) fs.unlinkSync(wfPath);
       }
+
+      // Sync public-staging/ → public repo root (recursive)
+      // This overlays LICENSE, README, CHANGELOG, SECURITY, CONTRIBUTING, docs/, etc.
+      const publicStagingDir = path.join(ROOT, 'public-staging');
+      if (fs.existsSync(publicStagingDir)) {
+        spawnSync('rsync', ['-a', publicStagingDir + '/', tmpDir + '/'], { stdio: 'inherit' });
+      }
+
+      // ── Sanitization gate ───────────────────────────────────────────────
+      // Scan all tracked text files for proprietary patterns before pushing.
+      // Patterns loaded from .sync-blocklist (not synced to public repo).
+      const blocklistPath = path.join(ROOT, '.sync-blocklist');
+      const BLOCKED_PATTERNS = [];
+      if (fs.existsSync(blocklistPath)) {
+        for (const line of fs.readFileSync(blocklistPath, 'utf8').split('\n')) {
+          const trimmed = line.trim();
+          if (!trimmed || trimmed.startsWith('#')) continue;
+          // Each line is a regex pattern, optionally with /flags
+          const m = trimmed.match(/^\/(.+)\/([gimsuy]*)$/);
+          if (m) {
+            BLOCKED_PATTERNS.push(new RegExp(m[1], m[2]));
+          } else {
+            // Plain string → case-insensitive word boundary match
+            BLOCKED_PATTERNS.push(new RegExp('\\b' + trimmed.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'i'));
+          }
+        }
+      }
+      if (BLOCKED_PATTERNS.length === 0) {
+        console.warn('⚠️  No .sync-blocklist found — skipping sanitization scan.');
+        console.warn('   Create .sync-blocklist with one pattern per line to enable leak detection.');
+      }
+      // Files/dirs exempt from scanning
+      const SCAN_EXEMPT = [
+        /\/\.git\//,
+        /node_modules\//,
+        /clean-machine-onboard\.sh$/, // contains negative assertions checking for org-name leaks
+      ];
+
+      console.log('Running sanitization scan...');
+      const violations = [];
+      const scanDir = (dir) => {
+        for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+          const full = path.join(dir, entry.name);
+          const rel = path.relative(tmpDir, full);
+          if (SCAN_EXEMPT.some(r => r.test(full))) continue;
+          if (entry.isDirectory()) { scanDir(full); continue; }
+          // Skip binary files
+          const ext = path.extname(entry.name).toLowerCase();
+          if (['.png', '.jpg', '.jpeg', '.gif', '.ico', '.woff', '.woff2', '.ttf', '.eot', '.tgz', '.gz', '.zip'].includes(ext)) continue;
+          try {
+            const content = fs.readFileSync(full, 'utf8');
+            const lines = content.split('\n');
+            for (let i = 0; i < lines.length; i++) {
+              for (const pat of BLOCKED_PATTERNS) {
+                if (pat.test(lines[i])) {
+                  violations.push({ file: rel, line: i + 1, pattern: pat.source, text: lines[i].trim().slice(0, 120) });
+                }
+              }
+            }
+          } catch { /* binary file, skip */ }
+        }
+      };
+      scanDir(tmpDir);
+
+      if (violations.length > 0) {
+        console.error('\n❌ Sanitization FAILED — proprietary content detected:\n');
+        for (const v of violations) {
+          console.error(`  ${v.file}:${v.line}  [${v.pattern}]`);
+          console.error(`    ${v.text}\n`);
+        }
+        console.error(`${violations.length} violation(s) found. Fix these before syncing to the public repo.`);
+        process.exit(1);
+      }
+      console.log('Sanitization passed — no proprietary content detected.');
 
       // Show what changed
       const diffResult = spawnSync('git', ['status', '--short'], { cwd: tmpDir, stdio: 'pipe' });
@@ -4052,11 +4133,11 @@ const COMMANDS = {
       }
 
       console.log('Pushing to usewayfind/wayfind...');
-      // Use GH_TOKEN to ensure correct account (gh multi-account may route wrong)
-      const tokenResult = spawnSync('gh', ['auth', 'token'], { stdio: 'pipe' });
-      const pushEnv = { ...process.env };
-      if (tokenResult.stdout) pushEnv.GH_TOKEN = tokenResult.stdout.toString().trim();
-      const pushResult = spawnSync('git', ['push'], { cwd: tmpDir, stdio: 'inherit', env: pushEnv });
+      // Allow override for SSH-based multi-account routing
+      if (process.env.WAYFIND_PUBLIC_REPO) {
+        spawnSync('git', ['remote', 'set-url', 'origin', process.env.WAYFIND_PUBLIC_REPO], { cwd: tmpDir });
+      }
+      const pushResult = spawnSync('git', ['push'], { cwd: tmpDir, stdio: 'inherit' });
       if (pushResult.status !== 0) {
         console.error('Push failed — check your access to usewayfind/wayfind');
         process.exit(1);

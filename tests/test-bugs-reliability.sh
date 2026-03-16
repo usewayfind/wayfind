@@ -61,11 +61,11 @@ assert_contains "hook calls wayfind status --write" "status --write" "$(cat "$HO
 assert_contains "hook uses --quiet flag" "--quiet" "$(cat "$HOOK")"
 assert_contains "hook has set -euo pipefail" "set -euo pipefail" "$(cat "$HOOK")"
 assert_contains "hook falls back gracefully" "|| true" "$(cat "$HOOK")"
-# Check for standalone 'find ' command (not 'wayfind')
-if grep -P '(?<!way)find ' "$HOOK" >/dev/null 2>&1; then
-  _fail "hook doesn't hardcode find" "'find ' command was found"
+# Check for standalone 'find ' command (not 'wayfind' or 'Wayfind')
+if sed 's/[Ww]ayfind//gi' "$HOOK" | grep -q 'find '; then
+  fail; ERRORS+=("FAIL: hook doesn't hardcode find — 'find ' command was found"); echo "  ✗ hook doesn't hardcode find"
 else
-  _pass "hook doesn't hardcode find"
+  pass; echo "  ✓ hook doesn't hardcode find"
 fi
 assert_not_contains "hook doesn't do staleness detection" "STALE" "$(cat "$HOOK")"
 

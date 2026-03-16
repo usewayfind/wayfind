@@ -48,7 +48,7 @@ echo ""
 echo "Phase 1: Container config from env vars"
 
 export GITHUB_TOKEN="ghp_simulated_token"
-export TEAM_CONTEXT_GITHUB_REPOS="HopSkipInc/EventSubscriptionService"
+export TEAM_CONTEXT_GITHUB_REPOS="acme-corp/event-service"
 export INTERCOM_TOKEN="intercom_simulated_token"
 export TEAM_CONTEXT_INTERCOM_TAGS="bug,feature-request"
 export ANTHROPIC_API_KEY="sk-ant-simulated"
@@ -133,7 +133,7 @@ echo "$INTERCOM_PULL" | grep -q "Conversations:" && _pass "Intercom pull succeed
 
 # Verify signal files exist
 TODAY_DATE=$(date +%Y-%m-%d)
-GITHUB_SIGNAL="$SIGNALS_DIR/github/HopSkipInc/EventSubscriptionService/${TODAY_DATE}.md"
+GITHUB_SIGNAL="$SIGNALS_DIR/github/acme-corp/event-service/${TODAY_DATE}.md"
 GITHUB_SUMMARY="$SIGNALS_DIR/github/${TODAY_DATE}-summary.md"
 INTERCOM_SIGNAL="$SIGNALS_DIR/intercom/${TODAY_DATE}.md"
 

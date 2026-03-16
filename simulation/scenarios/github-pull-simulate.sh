@@ -31,8 +31,8 @@ cat > "$TEST_HOME/.claude/team-context/connectors.json" << 'EOF'
     "transport": "simulate",
     "token": null,
     "repos": [
-      { "owner": "HopSkipInc", "repo": "EventSubscriptionService" },
-      { "owner": "HopSkipInc", "repo": "AnalyticsService" }
+      { "owner": "acme-corp", "repo": "event-service" },
+      { "owner": "acme-corp", "repo": "analytics-service" }
     ],
     "configured_at": "2026-03-01T10:00:00Z",
     "last_pull": null
@@ -52,10 +52,10 @@ echo ""
 echo "  Pull output validation:"
 
 # Verify output mentions repos
-if echo "$OUTPUT" | grep -qF "HopSkipInc"; then
+if echo "$OUTPUT" | grep -qF "acme-corp"; then
     _pass "output mentions org name"
 else
-    _fail "output mentions org name" "HopSkipInc not found in output"
+    _fail "output mentions org name" "acme-corp not found in output"
 fi
 
 if echo "$OUTPUT" | grep -qF "repo(s)"; then
@@ -89,15 +89,15 @@ SIGNALS_DIR="$TEST_HOME/.claude/team-context/signals/github"
 TODAY_DATE=$(date +%Y-%m-%d)
 
 # Check per-repo files exist
-assert_file_exists "$SIGNALS_DIR/HopSkipInc/EventSubscriptionService/${TODAY_DATE}.md" "EventSubscriptionService signal file exists"
-assert_file_exists "$SIGNALS_DIR/HopSkipInc/AnalyticsService/${TODAY_DATE}.md" "AnalyticsService signal file exists"
+assert_file_exists "$SIGNALS_DIR/acme-corp/event-service/${TODAY_DATE}.md" "event-service signal file exists"
+assert_file_exists "$SIGNALS_DIR/acme-corp/analytics-service/${TODAY_DATE}.md" "analytics-service signal file exists"
 
 # Check rollup summary exists
 assert_file_exists "$SIGNALS_DIR/${TODAY_DATE}-summary.md" "rollup summary file exists"
 
 # Verify markdown content structure
-if [ -f "$SIGNALS_DIR/HopSkipInc/EventSubscriptionService/${TODAY_DATE}.md" ]; then
-    SIGNAL_FILE="$SIGNALS_DIR/HopSkipInc/EventSubscriptionService/${TODAY_DATE}.md"
+if [ -f "$SIGNALS_DIR/acme-corp/event-service/${TODAY_DATE}.md" ]; then
+    SIGNAL_FILE="$SIGNALS_DIR/acme-corp/event-service/${TODAY_DATE}.md"
     assert_file_contains "$SIGNAL_FILE" "## Pull Requests" "signal file has PR section"
     assert_file_contains "$SIGNAL_FILE" "## Issues" "signal file has Issues section"
     assert_file_contains "$SIGNAL_FILE" "## CI/CD" "signal file has CI/CD section"

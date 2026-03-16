@@ -8,7 +8,7 @@
 - Campaign briefs pipeline shipped (PR #2461) but no product sign-off on output format. Risk of rework if Sales has feedback.
 
 ## Scope Drift
-- AnalyticsService SQL migration expanding scope: original plan was 18 gold tables, now at 23. Extra 5 added without updated estimates.
+- analytics-service SQL migration expanding scope: original plan was 18 gold tables, now at 23. Extra 5 added without updated estimates.
 - ReportService branding flag (PR #2466) added mid-sprint without backlog grooming. Small but sets precedent.
 
 ## Customer Signals
@@ -17,7 +17,7 @@
 - Support ticket volume up 15% week-over-week. Top category: bulk import failures (Issue #342).
 
 ## Feature Delivery
-- Converged matching deployed to QA (ImportExportService). Nick and Swetha start validation Monday.
+- Converged matching deployed to QA (import-service). Nick and Swetha start validation Monday.
 - GitHub signal connector shipped -- first signal channel live. Enables digest MVP.
 
 ## Risks

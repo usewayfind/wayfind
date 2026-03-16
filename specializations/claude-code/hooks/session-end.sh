@@ -3,6 +3,8 @@
 # Runs incremental conversation indexing with journal export after each session.
 # Extracted decisions get written to the journal directory so they sync via git
 # and the container's journal indexer picks them up.
+#
+# Performance target: <5s for the common case (no new conversations to process).
 
 set -euo pipefail
 
@@ -24,6 +26,20 @@ if [ -z "$WAYFIND" ]; then
   fi
 fi
 
+# ── Fast path: skip reindex if no conversation files changed ──────────────────
+# The full reindex pipeline (load store, scan transcripts, hash check, LLM calls)
+# has a ~2-3s baseline cost even when nothing changed. This filesystem check
+# short-circuits in <50ms for the common case.
+LAST_RUN_FILE="$HOME/.claude/team-context/.last-reindex"
+if [ -f "$LAST_RUN_FILE" ]; then
+  CHANGED=$(find "$HOME/.claude/projects" -name "*.jsonl" -newer "$LAST_RUN_FILE" 2>/dev/null | head -1)
+  if [ -z "$CHANGED" ]; then
+    # No conversation files changed — skip expensive reindex, just sync journals
+    $WAYFIND journal sync 2>/dev/null &
+    exit 0
+  fi
+fi
+
 # Run incremental reindex (conversations only — journals are handled by the journal write itself)
 # --conversations-only: skip journals (just written by the session, no need to re-index)
 # --export: write extracted decisions as journal entries for git sync
@@ -31,6 +47,10 @@ fi
 # --write-stats: write session stats JSON for status line display
 $WAYFIND reindex --conversations-only --export --detect-shifts --write-stats 2>/dev/null || true
 
-# Sync authored journals to team-context repo (commit + push)
-# This makes local journals available to the container and other team members
-$WAYFIND journal sync 2>/dev/null || true
+# Update the marker so the next session's fast-path check works
+mkdir -p "$HOME/.claude/team-context"
+touch "$LAST_RUN_FILE"
+
+# Sync authored journals to team-context repo (commit + push) — backgrounded
+# so the session can exit immediately. Git push is the slowest part (~1-3s).
+$WAYFIND journal sync 2>/dev/null &

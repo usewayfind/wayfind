@@ -536,6 +536,25 @@ async function searchDecisionTrail(query, config) {
     results = contentStore.searchText(searchQuery, searchOpts);
   }
 
+  // If text search returned results but none are journal entries (all signals/conversations),
+  // and we have date filters, also try metadata browse to find actual journal entries.
+  // This handles broad queries like "today's activity" where keyword search matches
+  // signal files but misses the journal entries the user actually wants.
+  if (results && results.length > 0 && (dateFilters.since || dateFilters.until)) {
+    const hasJournalResults = results.some(r => {
+      const source = r.entry?.source;
+      return !source || source === 'journal';
+    });
+    if (!hasJournalResults) {
+      const browseOpts = { ...searchOpts };
+      const metadataResults = contentStore.queryMetadata(browseOpts);
+      if (metadataResults.length > 0) {
+        // Prefer metadata browse (actual journal entries) over signal-only text search
+        results = metadataResults.slice(0, searchOpts.limit).map(r => ({ ...r, score: 1 }));
+      }
+    }
+  }
+
   // If date-filtered search returned empty, try browsing by date
   if ((!results || results.length === 0) && (dateFilters.since || dateFilters.until)) {
     const browseOpts = { ...searchOpts };

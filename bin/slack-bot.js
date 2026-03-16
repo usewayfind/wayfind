@@ -1276,6 +1276,9 @@ async function start(config) {
     if (event.user === botUserId || event.bot_id) return;
     // Ignore messages that mention the bot (handled by app_mention)
     if (event.text && event.text.includes(`<@${botUserId}>`)) return;
+    // Ignore messages that @mention other users — the message is directed at a person, not the bot.
+    // Slack encodes mentions as <@U...>. If any mention is present and none is the bot, skip.
+    if (event.text && /<@U[A-Z0-9]+>/.test(event.text)) return;
     // Ignore message subtypes (edits, joins, etc.)
     if (event.subtype) return;
 

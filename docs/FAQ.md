@@ -4,11 +4,18 @@
 
 ### How do I set up Wayfind for a new repo?
 
-Run `/init-memory` in the repo. This creates `.claude/team-state.md` (shared, tracked) and `.claude/personal-state.md` (personal, gitignored), updates `.gitignore`, and registers the repo globally.
+First, install the plugin if you haven't already:
+
+```
+/plugin marketplace add usewayfind/wayfind
+/plugin install wayfind@usewayfind
+```
+
+Then run `/wayfind:init-memory` in the repo. This creates `.claude/team-state.md` (shared, tracked) and `.claude/personal-state.md` (personal, gitignored), updates `.gitignore`, and registers the repo globally.
 
 ### How do I set up a team?
 
-Run `/init-team`. It walks you through creating a team, setting up profiles, creating a team-context repo, configuring Slack digests, and optionally connecting Notion.
+Run `/wayfind:init-team`. It walks you through creating a team, setting up profiles, creating a team-context repo, configuring Slack digests, and optionally connecting Notion.
 
 ### Can I be on multiple teams?
 
@@ -59,7 +66,7 @@ This usually means those journal entries haven't been indexed yet. Check:
 
 ### How do I change when digests are sent?
 
-Edit your `connectors.json` schedule, or ask your team admin to update the container's cron schedule. Per-member scheduling is planned.
+Edit your `connectors.json` schedule, or ask your team admin to update the container's cron schedule. Per-member scheduling is tracked in [#68](https://github.com/leizerowicz/wayfind/issues/68).
 
 ---
 
@@ -71,7 +78,7 @@ Set `TEAM_CONTEXT_SKIP_EXPORT=1` in the environment when spawning worker agents.
 
 ### Does Wayfind support a push API for agent frameworks?
 
-Not yet. Currently decisions are extracted from Claude Code session transcripts. A push API (`wayfind decision` CLI / HTTP endpoint) for framework-agnostic intake is being designed.
+Not yet. Currently decisions are extracted from Claude Code session transcripts. A push API (`wayfind decision` CLI / HTTP endpoint) for framework-agnostic intake is being designed in [#79](https://github.com/leizerowicz/wayfind/issues/79).
 
 ---
 
@@ -103,13 +110,21 @@ The container handles everything the workflow does plus signal connectors and th
 
 ### I updated the npm package but my hooks are still old
 
-`npm update -g wayfind` only updates the package files. To deploy new hooks and commands to `~/.claude/hooks/`, run:
+If you're using the **Claude Code plugin** (recommended), hooks update automatically with the plugin — no manual step needed.
+
+If you're using the legacy npm-only setup, `npm update -g wayfind` only updates the package files. To deploy new hooks and commands to `~/.claude/hooks/`, run:
 
 ```
 wayfind update
 ```
 
-This re-runs setup in update mode, overwriting hook scripts and commands while leaving your memory files untouched.
+To switch from legacy hooks to the plugin model:
+
+```
+/plugin marketplace add usewayfind/wayfind
+/plugin install wayfind@usewayfind
+wayfind migrate-to-plugin
+```
 
 ---
 

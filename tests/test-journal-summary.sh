@@ -169,6 +169,9 @@ ENTRY
 
 # ── Tests ─────────────────────────────────────────────────────────────────────
 
+# Ensure all fixture writes are flushed to disk before reading
+sync 2>/dev/null || true
+
 echo ""
 echo "journal-summary.sh — basic output"
 

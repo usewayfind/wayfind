@@ -1209,13 +1209,13 @@ else
 fi
 
 # Test: INCLUDE_REPOS set = only matching repos pass
-RESULT=$(TEAM_CONTEXT_INCLUDE_REPOS="HopSkipInc/*,Doorbell/*" TEAM_CONTEXT_EXCLUDE_REPOS="" TEAM_CONTEXT_SIMULATE=1 node -e "
+RESULT=$(TEAM_CONTEXT_INCLUDE_REPOS="AcmeCorp/*,Frontend/*" TEAM_CONTEXT_EXCLUDE_REPOS="" TEAM_CONTEXT_SIMULATE=1 node -e "
   const cs = require('./bin/content-store');
   const results = [
-    cs.isRepoExcluded('HopSkipInc/research') ? 'excluded' : 'included',
-    cs.isRepoExcluded('Doorbell/MVP') ? 'excluded' : 'included',
+    cs.isRepoExcluded('AcmeCorp/research') ? 'excluded' : 'included',
+    cs.isRepoExcluded('Frontend/MVP') ? 'excluded' : 'included',
     cs.isRepoExcluded('greg/wayfind') ? 'excluded' : 'included',
-    cs.isRepoExcluded('greg/NanoClaw') ? 'excluded' : 'included',
+    cs.isRepoExcluded('greg/tools') ? 'excluded' : 'included',
   ];
   console.log(results.join(','));
 ")
@@ -1226,9 +1226,9 @@ else
 fi
 
 # Test: INCLUDE_REPOS takes priority over EXCLUDE_REPOS
-RESULT=$(TEAM_CONTEXT_INCLUDE_REPOS="HopSkipInc/*" TEAM_CONTEXT_EXCLUDE_REPOS="research" TEAM_CONTEXT_SIMULATE=1 node -e "
+RESULT=$(TEAM_CONTEXT_INCLUDE_REPOS="AcmeCorp/*" TEAM_CONTEXT_EXCLUDE_REPOS="research" TEAM_CONTEXT_SIMULATE=1 node -e "
   const cs = require('./bin/content-store');
-  console.log(cs.isRepoExcluded('HopSkipInc/research') ? 'excluded' : 'included');
+  console.log(cs.isRepoExcluded('AcmeCorp/research') ? 'excluded' : 'included');
 ")
 if [ "$RESULT" = "included" ]; then
     _pass "INCLUDE_REPOS overrides EXCLUDE_REPOS"

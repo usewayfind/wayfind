@@ -1,0 +1,15 @@
+{
+  "name": "wayfind",
+  "version": "2.0.14",
+  "description": "Team decision trail for AI-assisted development. Session memory, decision journals, and team digests.",
+  "author": {
+    "name": "Wayfind",
+    "url": "https://github.com/usewayfind"
+  },
+  "homepage": "https://github.com/usewayfind/wayfind",
+  "repository": "https://github.com/usewayfind/wayfind",
+  "license": "Apache-2.0",
+  "keywords": ["team", "context", "memory", "decisions", "digest", "journal", "session"],
+  "skills": "./skills/",
+  "hooks": "./hooks/hooks.json"
+}

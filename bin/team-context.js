@@ -2061,6 +2061,439 @@ function commitAndPushTeamJournals(teamContextPath, copied) {
   }
 }
 
+// ── Standup command ─────────────────────────────────────────────────────────
+
+/**
+ * Find and parse the most recent journal entry.
+ * @param {string} journalDir - Journal directory path
+ * @param {string} [repoFilter] - If set, only match entries whose repo header
+ *   matches this name (case-insensitive). Skips non-matching entries.
+ * @returns {{ date: string, repo: string, title: string, what: string } | null}
+ */
+function getLastJournalEntry(journalDir, repoFilter) {
+  if (!journalDir || !fs.existsSync(journalDir)) return null;
+
+  const files = fs.readdirSync(journalDir)
+    .filter(f => /^\d{4}-\d{2}-\d{2}/.test(f) && f.endsWith('.md'))
+    .sort()
+    .reverse();
+
+  const filterLower = repoFilter ? repoFilter.toLowerCase() : null;
+
+  for (const file of files) {
+    let content;
+    try {
+      content = fs.readFileSync(path.join(journalDir, file), 'utf8');
+    } catch {
+      continue;
+    }
+
+    const lines = content.split('\n');
+
+    // Find all entry start indices (## Repo — Title or ## Repo)
+    const entryStarts = [];
+    for (let i = 0; i < lines.length; i++) {
+      if (/^## /.test(lines[i])) entryStarts.push(i);
+    }
+    if (entryStarts.length === 0) continue;
+
+    // Walk entries in reverse (most recent first within each file)
+    for (let e = entryStarts.length - 1; e >= 0; e--) {
+      const start = entryStarts[e];
+      const end = e + 1 < entryStarts.length ? entryStarts[e + 1] : lines.length;
+      const entryLines = lines.slice(start, end);
+
+      const headerMatch = entryLines[0].match(/^## (.+?)(?:\s*[—–-]\s*(.+))?$/);
+      const repo = headerMatch ? headerMatch[1].trim() : '';
+      const title = headerMatch && headerMatch[2] ? headerMatch[2].trim() : '';
+
+      // Apply repo filter if set
+      if (filterLower && repo.toLowerCase() !== filterLower) continue;
+
+      // Extract **What:** field
+      let what = '';
+      for (let i = 1; i < entryLines.length; i++) {
+        const match = entryLines[i].match(/^\*\*What:\*\*\s*(.*)$/);
+        if (match) {
+          what = match[1].trim();
+          if (!what) {
+            for (let j = i + 1; j < entryLines.length; j++) {
+              if (!entryLines[j].trim() || /^\*\*/.test(entryLines[j])) break;
+              what += (what ? ' ' : '') + entryLines[j].trim();
+            }
+          }
+          break;
+        }
+      }
+
+      const dateMatch = file.match(/^(\d{4}-\d{2}-\d{2})/);
+      const date = dateMatch ? dateMatch[1] : '';
+
+      if (repo || what) return { date, repo, title, what };
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Emit a daily standup summary.
+ * Default: scoped to the current repo. --all scans every repo with state files.
+ * Shows: what was done last (from journal), what's planned, and blockers.
+ * @param {string[]} args - CLI arguments (supports --all)
+ */
+function runStandup(args) {
+  const explicitAll = args.includes('--all');
+  const journalDir = contentStore.DEFAULT_JOURNAL_DIR;
+  const cwd = process.cwd();
+
+  // Detect if we're inside a repo (.git + .claude/ state files)
+  // Home dir may have ~/.claude/state.md but isn't a repo
+  const claudeDir = path.join(cwd, '.claude');
+  const hasGit = fs.existsSync(path.join(cwd, '.git'));
+  const inRepo = hasGit && fs.existsSync(claudeDir) && (
+    fs.existsSync(path.join(claudeDir, 'team-state.md')) ||
+    fs.existsSync(path.join(claudeDir, 'state.md')) ||
+    fs.existsSync(path.join(claudeDir, 'personal-state.md'))
+  );
+
+  // If not in a repo, behave like --all
+  const showAll = explicitAll || !inRepo;
+
+  const PLAN_HEADERS = [
+    ...rebuildStatus.NEXT_HEADERS,
+    'My Current Focus',
+    'Current Sprint Focus',
+    'Current Focus',
+  ];
+
+  // Determine which state files to read
+  let stateEntries;
+  if (showAll) {
+    const envRoots = process.env.AI_MEMORY_SCAN_ROOTS;
+    const roots = envRoots
+      ? envRoots.split(':').filter(Boolean)
+      : rebuildStatus.DEFAULT_ROOTS;
+    stateEntries = rebuildStatus.scanStateFiles(roots);
+  } else {
+    // Current repo only — look for .claude/ state files in cwd
+    stateEntries = [];
+    const teamState = path.join(claudeDir, 'team-state.md');
+    const personalState = path.join(claudeDir, 'personal-state.md');
+    const plainState = path.join(claudeDir, 'state.md');
+
+    let stateFile = null;
+    if (fs.existsSync(teamState)) stateFile = teamState;
+    else if (fs.existsSync(plainState)) stateFile = plainState;
+    else if (fs.existsSync(personalState)) stateFile = personalState;
+
+    if (stateFile) {
+      const entry = { repoDir: cwd, stateFile };
+      if (stateFile !== personalState && fs.existsSync(personalState)) {
+        entry.personalStateFile = personalState;
+      }
+      stateEntries.push(entry);
+    }
+  }
+
+  // Gather next steps and blockers from state files
+  const nextItems = [];
+  const blockerItems = [];
+  const seenNext = new Set();
+  const seenBlockers = new Set();
+
+  for (const { stateFile, personalStateFile } of stateEntries) {
+    const filesToCheck = [stateFile, personalStateFile].filter(Boolean);
+    for (const filePath of filesToCheck) {
+      let fileContent;
+      try {
+        fileContent = fs.readFileSync(filePath, 'utf8');
+      } catch {
+        continue;
+      }
+      const lines = fileContent.split('\n').map(l => l.replace(/\r$/, ''));
+
+      const h1 = lines.find(l => /^# /.test(l));
+      const project = h1
+        ? h1.replace(/^# /, '').replace(/\s*[—–-].*$/, '').trim()
+        : path.basename(path.dirname(path.dirname(filePath)));
+
+      const next = extractStandupSection(lines, PLAN_HEADERS);
+      if (next && !seenNext.has(next)) {
+        seenNext.add(next);
+        nextItems.push({ project, text: next });
+      }
+
+      const blocker = extractStandupSection(lines, rebuildStatus.BLOCKER_HEADERS);
+      if (blocker && !seenBlockers.has(blocker)) {
+        seenBlockers.add(blocker);
+        blockerItems.push({ project, text: blocker });
+      }
+    }
+  }
+
+  // Filter journal to current repo when scoped, global when --all or home dir
+  const repoName = !showAll ? path.basename(cwd) : null;
+  const lastEntry = getLastJournalEntry(journalDir, repoName);
+  const scope = showAll ? 'all repos' : repoName;
+
+  console.log('');
+  console.log(`━━━ Standup (${scope}) ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+  console.log('');
+
+  // Last session
+  if (lastEntry) {
+    const dateStr = lastEntry.date ? ` (${lastEntry.date})` : '';
+    const repoStr = lastEntry.repo ? ` [${lastEntry.repo}]` : '';
+    console.log(`▶ Last session${dateStr}${repoStr}:`);
+    const summary = lastEntry.what || lastEntry.title || '(no details recorded)';
+    console.log(`  ${summary}`);
+  } else {
+    console.log('▶ Last session:');
+    console.log('  (no journal entries found)');
+  }
+
+  // Plan for today
+  console.log('');
+  console.log('▶ Plan for today:');
+  if (nextItems.length > 0) {
+    for (const item of nextItems) {
+      const prefix = showAll ? `${item.project}: ` : '';
+      console.log(`  ${prefix}${item.text}`);
+    }
+  } else {
+    console.log('  (no next steps recorded — update your state file to set a goal)');
+  }
+
+  // Blockers
+  console.log('');
+  console.log('▶ Blockers:');
+  if (blockerItems.length > 0) {
+    for (const item of blockerItems) {
+      const prefix = showAll ? `${item.project}: ` : '';
+      console.log(`  ${prefix}${item.text}`);
+    }
+  } else {
+    console.log('  None');
+  }
+
+  console.log('');
+  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  if (!showAll && inRepo) {
+    console.log('  Use --all for a cross-repo standup.');
+  }
+  console.log('');
+}
+
+/**
+ * Like extractSection but without the 120-char truncation used for status tables.
+ * Returns full paragraph text for standup display.
+ */
+function extractStandupSection(lines, headers) {
+  for (const header of headers) {
+    const idx = lines.findIndex(l => {
+      const match = l.match(/^#{2,3}\s+(.+)$/);
+      return match && match[1].trim() === header;
+    });
+    if (idx === -1) continue;
+
+    const para = [];
+    for (let i = idx + 1; i < lines.length; i++) {
+      const line = lines[i];
+      if (/^#{1,3}\s/.test(line)) break;
+      if (line.trim() === '' && para.length > 0) break;
+      if (line.trim() === '') continue;
+      para.push(line.trim());
+    }
+
+    if (para.length === 0) continue;
+
+    let text = para.join(' ');
+    text = text.replace(/\*\*/g, '').replace(/`/g, '');
+    return text;
+  }
+  return '';
+}
+
+// ── Update command ─────────────────────────────────────────────────────────
+
+/**
+ * Re-sync hooks and commands from the installed Wayfind package to ~/.claude/.
+ * Copies hook scripts and slash-command files, overwriting stale copies.
+ */
+function runUpdate() {
+  const specDir = path.join(ROOT, 'specializations', 'claude-code');
+  const hooksDir = path.join(HOME, '.claude', 'hooks');
+  const commandsDir = path.join(HOME, '.claude', 'commands');
+
+  // Ensure target dirs exist
+  if (!fs.existsSync(hooksDir)) fs.mkdirSync(hooksDir, { recursive: true });
+  if (!fs.existsSync(commandsDir)) fs.mkdirSync(commandsDir, { recursive: true });
+
+  let updated = 0;
+  let skipped = 0;
+
+  // Hook files to sync
+  const hookFiles = ['check-global-state.sh', 'session-end.sh'];
+  const sourceHooksDir = path.join(specDir, 'hooks');
+
+  for (const file of hookFiles) {
+    const src = path.join(sourceHooksDir, file);
+    const dest = path.join(hooksDir, file);
+    if (!fs.existsSync(src)) continue;
+
+    const srcContent = fs.readFileSync(src, 'utf8');
+    const destContent = fs.existsSync(dest) ? fs.readFileSync(dest, 'utf8') : '';
+
+    if (srcContent === destContent) {
+      skipped++;
+      continue;
+    }
+
+    fs.writeFileSync(dest, srcContent);
+    fs.chmodSync(dest, 0o755);
+    console.log(`  Updated: ${file}`);
+    updated++;
+  }
+
+  // Command files to sync
+  const sourceCommandsDir = path.join(specDir, 'commands');
+  if (fs.existsSync(sourceCommandsDir)) {
+    const cmdFiles = fs.readdirSync(sourceCommandsDir).filter(f => f.endsWith('.md'));
+    for (const file of cmdFiles) {
+      const src = path.join(sourceCommandsDir, file);
+      const dest = path.join(commandsDir, file);
+
+      const srcContent = fs.readFileSync(src, 'utf8');
+      const destContent = fs.existsSync(dest) ? fs.readFileSync(dest, 'utf8') : '';
+
+      if (srcContent === destContent) {
+        skipped++;
+        continue;
+      }
+
+      fs.writeFileSync(dest, srcContent);
+      console.log(`  Updated: ${file}`);
+      updated++;
+    }
+  }
+
+  // Write version marker
+  const versionFile = path.join(HOME, '.claude', 'team-context', '.wayfind-version');
+  try {
+    const pkg = require(path.join(ROOT, 'package.json'));
+    const versionDir = path.dirname(versionFile);
+    if (!fs.existsSync(versionDir)) fs.mkdirSync(versionDir, { recursive: true });
+    fs.writeFileSync(versionFile, pkg.version);
+  } catch { /* ignore */ }
+
+  if (updated > 0) {
+    console.log(`\n  ${updated} file(s) updated, ${skipped} already current.`);
+  } else {
+    console.log('  Everything up to date.');
+  }
+}
+
+// ── Migrate to plugin ───────────────────────────────────────────────────────
+
+function runMigrateToPlugin(args) {
+  const dryRun = args.includes('--dry-run');
+  const settingsPath = path.join(HOME, '.claude', 'settings.json');
+  const hooksDir = path.join(HOME, '.claude', 'hooks');
+  const commandsDir = path.join(HOME, '.claude', 'commands');
+
+  console.log('Wayfind — Migrate to Plugin');
+  console.log('===========================\n');
+
+  if (dryRun) console.log('(dry run — no changes will be made)\n');
+
+  let changes = 0;
+
+  // Step 1: Remove hook entries from settings.json
+  if (fs.existsSync(settingsPath)) {
+    const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+    const hooks = settings.hooks || {};
+    let hooksModified = false;
+
+    // Remove SessionStart hooks that reference check-global-state
+    if (hooks.SessionStart) {
+      const before = hooks.SessionStart.length;
+      hooks.SessionStart = hooks.SessionStart.filter(group => {
+        const cmds = (group.hooks || []);
+        return !cmds.some(h => (h.command || '').includes('check-global-state'));
+      });
+      if (hooks.SessionStart.length === 0) delete hooks.SessionStart;
+      if ((hooks.SessionStart || []).length !== before) hooksModified = true;
+    }
+
+    // Remove Stop hooks that reference session-end.sh or wayfind reindex
+    if (hooks.Stop) {
+      const before = hooks.Stop.length;
+      hooks.Stop = hooks.Stop.filter(group => {
+        const cmds = (group.hooks || []);
+        return !cmds.some(h => {
+          const cmd = h.command || '';
+          return cmd.includes('session-end.sh') || cmd.includes('wayfind reindex') || cmd.includes('team-context.js reindex');
+        });
+      });
+      if (hooks.Stop.length === 0) delete hooks.Stop;
+      if ((hooks.Stop || []).length !== before) hooksModified = true;
+    }
+
+    if (hooksModified) {
+      settings.hooks = hooks;
+      if (Object.keys(hooks).length === 0) delete settings.hooks;
+      if (!dryRun) {
+        fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + '\n');
+      }
+      console.log(`  ${dryRun ? 'Would remove' : 'Removed'} Wayfind hook entries from ~/.claude/settings.json`);
+      changes++;
+    } else {
+      console.log('  No Wayfind hook entries in settings.json (already clean)');
+    }
+  } else {
+    console.log('  No ~/.claude/settings.json found');
+  }
+
+  // Step 2: Remove old hook scripts
+  const oldHookFiles = ['check-global-state.sh', 'session-end.sh'];
+  for (const file of oldHookFiles) {
+    const hookPath = path.join(hooksDir, file);
+    if (fs.existsSync(hookPath)) {
+      if (!dryRun) fs.unlinkSync(hookPath);
+      console.log(`  ${dryRun ? 'Would remove' : 'Removed'} ~/.claude/hooks/${file}`);
+      changes++;
+    }
+  }
+
+  // Step 3: Remove old command files (plugin skills replace these)
+  const oldCommandFiles = ['init-memory.md', 'init-team.md', 'doctor.md', 'journal.md', 'standup.md', 'review-prs.md'];
+  for (const file of oldCommandFiles) {
+    const cmdPath = path.join(commandsDir, file);
+    if (fs.existsSync(cmdPath)) {
+      if (!dryRun) fs.unlinkSync(cmdPath);
+      console.log(`  ${dryRun ? 'Would remove' : 'Removed'} ~/.claude/commands/${file}`);
+      changes++;
+    }
+  }
+
+  // Step 4: Summary
+  console.log('');
+  if (changes === 0) {
+    console.log('Nothing to migrate — already clean.');
+  } else if (dryRun) {
+    console.log(`Would make ${changes} change(s). Run without --dry-run to apply.`);
+  } else {
+    console.log(`Done — ${changes} change(s) applied.`);
+    console.log('');
+    console.log('The Wayfind plugin now handles hooks and skills.');
+    console.log('Verify with: /wayfind:doctor');
+    console.log('');
+    console.log('Your old /standup, /doctor, etc. are now /wayfind:standup, /wayfind:doctor, etc.');
+    console.log('The CLI (wayfind digest, wayfind reindex, etc.) still works — only hooks and skills moved.');
+  }
+}
+
 // ── Status command ──────────────────────────────────────────────────────────
 
 function runStatus(args) {
@@ -3896,6 +4329,14 @@ const COMMANDS = {
     desc: 'Check if installed version meets team minimum (used by hooks)',
     run: () => runCheckVersion(),
   },
+  update: {
+    desc: 'Re-sync hooks and commands from the installed Wayfind package',
+    run: () => runUpdate(),
+  },
+  'migrate-to-plugin': {
+    desc: 'Remove old hooks/commands — let the Claude Code plugin handle them',
+    run: (args) => runMigrateToPlugin(args),
+  },
   doctor: {
     desc: 'Check your Wayfind installation for issues',
     run: (args) => {
@@ -3928,6 +4369,10 @@ const COMMANDS = {
   status: {
     desc: 'Show cross-project status (or rebuild Active Projects table)',
     run: (args) => runStatus(args),
+  },
+  standup: {
+    desc: 'Show a daily standup summary (last session, plan, blockers)',
+    run: (args) => runStandup(args),
   },
   signals: {
     desc: 'Show configured signal channels and last pull times',
@@ -4002,8 +4447,8 @@ const COMMANDS = {
 
       // Files and directories to sync
       const syncItems = [
-        'bin/', 'templates/', 'specializations/', 'tests/', 'simulation/',
-        'backup/', '.github/', 'Dockerfile', 'package.json', 'setup.sh',
+        'bin/', 'templates/', 'specializations/', 'plugin/', 'tests/', 'simulation/',
+        'backup/', '.github/', 'Dockerfile', 'package.json', 'marketplace.json', 'setup.sh',
         'install.sh', 'uninstall.sh', 'doctor.sh', 'journal-summary.sh',
         'BOOTSTRAP_PROMPT.md', '.gitattributes', '.gitignore', 'VERSIONS.md',
       ];
@@ -4237,6 +4682,13 @@ function showHelp() {
   console.log('  wayfind status --write        Rebuild Active Projects in global-state.md');
   console.log('  wayfind status --json         Machine-readable output');
   console.log('  wayfind status --quiet        Suppress output (for hooks)');
+  console.log('  wayfind standup               Daily standup for current repo (last session, plan, blockers)');
+  console.log('  wayfind standup --all          Daily standup across all repos');
+  console.log('');
+  console.log('Maintenance:');
+  console.log('  wayfind update                Re-sync hooks and commands from package');
+  console.log('  wayfind migrate-to-plugin     Remove old hooks/commands — let the plugin handle them');
+  console.log('  wayfind doctor                Check installation health');
   console.log('');
   console.log('Publishing:');
   console.log('  wayfind sync-public           Sync code to usewayfind/wayfind (triggers npm + Docker publish)');

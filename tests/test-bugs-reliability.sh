@@ -68,6 +68,7 @@ else
   pass; echo "  ✓ hook doesn't hardcode find"
 fi
 assert_not_contains "hook doesn't do staleness detection" "STALE" "$(cat "$HOOK")"
+assert_not_contains "hook does not run standup inline" "standup" "$(cat "$HOOK")"
 
 # Test hook runs without error (no wayfind binary needed — falls back to local checkout)
 echo ""
@@ -92,6 +93,67 @@ mkdir -p "$SPACE_DIR"
 bash "$HOOK" 2>/dev/null || true
 ((PASS++)); echo "  ✓ hook handles environments gracefully"
 rm -rf "$(dirname "$SPACE_DIR")"
+
+# Standup command tests
+echo ""
+echo "Standup: wayfind standup command"
+WAYFIND_JS="$SCRIPT_DIR/bin/team-context.js"
+
+# Basic standup with no data — should exit 0 and show empty standup
+STANDUP_OUTPUT="$(node "$WAYFIND_JS" standup 2>/dev/null)" && STANDUP_EXIT=0 || STANDUP_EXIT=$?
+assert_eq "standup exits 0 with no data" "0" "$STANDUP_EXIT"
+assert_contains "standup shows 'Last session' header" "Last session" "$STANDUP_OUTPUT"
+assert_contains "standup shows 'Plan for today' header" "Plan for today" "$STANDUP_OUTPUT"
+assert_contains "standup shows 'Blockers' header" "Blockers" "$STANDUP_OUTPUT"
+
+# Standup with mock journal + state files
+STANDUP_TMP="$(mktemp -d)"
+mkdir -p "$STANDUP_TMP/.claude/memory/journal"
+mkdir -p "$STANDUP_TMP/repos/testrepo/.claude"
+mkdir -p "$STANDUP_TMP/repos/testrepo/.git"
+
+cat > "$STANDUP_TMP/.claude/memory/journal/2026-03-15.md" <<'JOURNALEOF'
+## testrepo — Implement feature X
+
+**Why:** Improve the user experience
+**What:** Finished implementing and testing feature X
+**Outcome:** Done — PR merged
+**On track?:** Yes
+**Lessons:** Always write tests first
+JOURNALEOF
+
+cat > "$STANDUP_TMP/repos/testrepo/.claude/personal-state.md" <<'STATEEOF'
+# testrepo — Personal State
+
+Last updated: 2026-03-15
+
+## My Current Focus
+Deploy feature X to staging and monitor for errors
+
+## What I'm Watching
+Performance regression in the API layer
+STATEEOF
+
+# --all flag scans all repos (uses AI_MEMORY_SCAN_ROOTS)
+STANDUP_OUT="$(HOME="$STANDUP_TMP" AI_MEMORY_SCAN_ROOTS="$STANDUP_TMP/repos" node "$WAYFIND_JS" standup --all 2>/dev/null)"
+assert_contains "standup --all shows last session date" "2026-03-15" "$STANDUP_OUT"
+assert_contains "standup --all shows last session repo" "testrepo" "$STANDUP_OUT"
+assert_contains "standup --all shows what was done" "Finished implementing and testing feature X" "$STANDUP_OUT"
+assert_contains "standup --all shows plan for today" "Deploy feature X to staging" "$STANDUP_OUT"
+assert_contains "standup --all shows blockers" "Performance regression" "$STANDUP_OUT"
+assert_contains "standup --all shows 'all repos' in header" "all repos" "$STANDUP_OUT"
+
+# Default (no --all) scopes to cwd — run from the mock repo dir
+STANDUP_CWD="$(cd "$STANDUP_TMP/repos/testrepo" && HOME="$STANDUP_TMP" node "$WAYFIND_JS" standup 2>/dev/null)"
+assert_contains "standup (cwd) shows plan for today" "Deploy feature X to staging" "$STANDUP_CWD"
+assert_contains "standup (cwd) shows scope hint" "--all" "$STANDUP_CWD"
+assert_contains "standup (cwd) shows repo-scoped journal" "Finished implementing and testing feature X" "$STANDUP_CWD"
+assert_contains "standup (cwd) shows repo name in header" "testrepo" "$STANDUP_CWD"
+
+rm -rf "$STANDUP_TMP"
+
+# Standup is in the COMMANDS registry
+assert_contains "standup command is registered in team-context.js" "standup" "$(node "$WAYFIND_JS" help 2>/dev/null)"
 
 # Summary
 echo ""

@@ -24,6 +24,13 @@ const NEXT_HEADERS = [
   "What's Left",
 ];
 
+const BLOCKER_HEADERS = [
+  'Blockers',
+  'Blocking',
+  "What I'm Watching",
+  'Open Questions',
+];
+
 // ── Scanning ─────────────────────────────────────────────────────────────────
 
 /**
@@ -64,17 +71,18 @@ function scanDir(dir, results, seen, depth) {
     const personalState = path.join(claudeDir, 'personal-state.md');
     const plainState = path.join(claudeDir, 'state.md');
 
-    // Prefer team-state.md, fall back to state.md
+    // Prefer team-state.md, fall back to state.md, then personal-state.md
     let stateFile = null;
     if (fs.existsSync(teamState)) stateFile = teamState;
     else if (fs.existsSync(plainState)) stateFile = plainState;
+    else if (fs.existsSync(personalState)) stateFile = personalState;
 
     if (stateFile && !seen.has(dir)) {
       seen.add(dir);
       results.push({ repoDir: dir, stateFile });
 
-      // Also note personal-state.md if it exists (for richer parsing)
-      if (fs.existsSync(personalState)) {
+      // Also note personal-state.md if it exists and wasn't chosen as primary
+      if (stateFile !== personalState && fs.existsSync(personalState)) {
         results[results.length - 1].personalStateFile = personalState;
       }
     }
@@ -294,4 +302,5 @@ module.exports = {
   DEFAULT_ROOTS,
   STATUS_HEADERS,
   NEXT_HEADERS,
+  BLOCKER_HEADERS,
 };

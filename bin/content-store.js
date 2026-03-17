@@ -41,7 +41,7 @@ const DATE_FILE_RE = /^(\d{4}-\d{2}-\d{2})(?:-([a-z0-9._-]+))?\.md$/;
 
 // Team repo allowlist — when set, only entries from matching repos are indexed/queried.
 // Replaces the old TEAM_CONTEXT_EXCLUDE_REPOS blocklist approach.
-// Format: comma-separated, supports org/* wildcards (e.g., "HopSkipInc/*,Doorbell/*")
+// Format: comma-separated, supports org/* wildcards (e.g., "AcmeCorp/*,Frontend/*")
 const INCLUDE_REPOS = (process.env.TEAM_CONTEXT_INCLUDE_REPOS || '')
   .split(',').map(r => r.trim().toLowerCase()).filter(Boolean);
 

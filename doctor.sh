@@ -42,6 +42,24 @@ check_hook_registered() {
         ISSUES=$((ISSUES + 1))
     fi
 
+    # Check if installed hooks are stale vs package source
+    local SCRIPT_DIR
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    local SOURCE_HOOKS_DIR="$SCRIPT_DIR/specializations/claude-code/hooks"
+    local INSTALLED_HOOKS_DIR="$HOME/.claude/hooks"
+    for hook_file in check-global-state.sh session-end.sh; do
+        local src="$SOURCE_HOOKS_DIR/$hook_file"
+        local dest="$INSTALLED_HOOKS_DIR/$hook_file"
+        if [ -f "$src" ] && [ -f "$dest" ]; then
+            if ! diff -q "$src" "$dest" >/dev/null 2>&1; then
+                warn "$hook_file is out of date — run 'wayfind update' to sync"
+                ISSUES=$((ISSUES + 1))
+            else
+                [ "$VERBOSE" = true ] && ok "$hook_file is current"
+            fi
+        fi
+    done
+
     # Validate hook structure — correct format: {matcher: str, hooks: [{type, command}]}
     if command -v python3 &>/dev/null; then
         local STRUCT_RESULT

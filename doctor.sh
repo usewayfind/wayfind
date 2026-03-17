@@ -19,14 +19,18 @@ ISSUES=0
 
 is_plugin_installed() {
     # Check if wayfind is installed as a Claude Code plugin
-    # Plugins live under ~/.claude/plugins/ — look for any marketplace that contains our plugin
+    # Method 1: Check enabledPlugins in settings.json (authoritative — what Claude Code reads)
+    local SETTINGS="$HOME/.claude/settings.json"
+    if [ -f "$SETTINGS" ] && grep -q '"wayfind@' "$SETTINGS" 2>/dev/null; then
+        return 0
+    fi
+
+    # Method 2: Check plugin files on disk
     local PLUGINS_DIR="$HOME/.claude/plugins"
     if [ -d "$PLUGINS_DIR" ]; then
-        # Check marketplaces (e.g. ~/.claude/plugins/marketplaces/usewayfind-wayfind/plugin/)
         if find "$PLUGINS_DIR" -path '*/wayfind/plugin/.claude-plugin/plugin.json' -print -quit 2>/dev/null | grep -q .; then
             return 0
         fi
-        # Also check direct plugin installs
         if find "$PLUGINS_DIR" -name 'plugin.json' -exec grep -l '"name": "wayfind"' {} + 2>/dev/null | grep -q .; then
             return 0
         fi

@@ -12,18 +12,33 @@
 
 ## Install
 
+### Claude Code plugin (recommended)
+
+In a Claude Code session:
+
+```
+/plugin marketplace add usewayfind/wayfind
+/plugin install wayfind@usewayfind
+```
+
+Then initialize a repo:
+
+```
+/wayfind:init-memory
+```
+
+Your AI sessions now resume where you left off instead of cold-starting.
+
+### npm CLI
+
+The plugin includes the CLI, but you can also install it standalone:
+
 ```bash
 npm install -g wayfind
 wayfind init
 ```
 
-Then in a Claude Code session:
-
-```
-/init-memory     # Persistent context for this repo
-```
-
-Your AI sessions now resume where you left off instead of cold-starting.
+The CLI is required for digest generation, Slack bot, signal connectors, and team management. The plugin handles session hooks and slash commands.
 
 ---
 
@@ -45,8 +60,8 @@ Your AI sessions now resume where you left off instead of cold-starting.
 
 Only the engineer installs anything. Everyone else sees a Slack digest.
 
-```bash
-/init-team       # Set up team context, journals, and digests
+```
+/wayfind:init-team     # Set up team context, journals, and digests
 ```
 
 ---
@@ -64,7 +79,8 @@ All context is plain markdown in directories you control:
     journal/YYYY-MM-DD.md   # Daily decision log
 
 <repo>/.claude/
-  state.md                  # Per-repo: branch, status, next steps
+  team-state.md             # Shared team context (committed)
+  personal-state.md         # Your context (gitignored)
 ```
 
 No proprietary formats. No vendor lock-in. `grep` works if Wayfind breaks.
@@ -99,11 +115,24 @@ wayfind pull --all        # All configured channels
 
 ## Commands
 
+### Plugin skills (in Claude Code)
+
+| Skill | Description |
+|-------|-------------|
+| `/wayfind:init-memory` | Initialize context for the current repo |
+| `/wayfind:init-team` | Set up team context, journals, and digests |
+| `/wayfind:doctor` | Check installation health |
+| `/wayfind:standup` | Daily standup summary |
+| `/wayfind:journal` | Weekly journal digest and drift detection |
+| `/wayfind:review-prs` | Review overnight PRs |
+
+### CLI commands
+
 | Command | Description |
 |---------|-------------|
 | `wayfind init` | Install for your AI tool |
 | `wayfind doctor` | Check installation health |
-| `wayfind update` | Update to latest version |
+| `wayfind update` | Update hooks and commands |
 | `wayfind status` | Cross-project status |
 | `wayfind team create` | Create a new team |
 | `wayfind team join` | Join an existing team |
@@ -116,6 +145,7 @@ wayfind pull --all        # All configured channels
 | `wayfind journal sync` | Sync journals to team repo |
 | `wayfind onboard <repo>` | Generate onboarding context pack |
 | `wayfind deploy init` | Scaffold Docker deployment |
+| `wayfind migrate-to-plugin` | Remove old hooks (after plugin install) |
 
 Run `wayfind help` for the full list.
 
@@ -148,7 +178,8 @@ Run `wayfind help` for the full list.
 
 | Tool | Status | Setup |
 |------|--------|-------|
-| Claude Code | Full support | `wayfind init` |
+| Claude Code | Full support (plugin) | `/plugin marketplace add usewayfind/wayfind` |
+| Claude Code | Full support (npm) | `wayfind init` |
 | Cursor | Session protocol | `wayfind init-cursor` |
 | Generic | Manual | See `specializations/generic/` |
 

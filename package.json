@@ -1,6 +1,6 @@
 {
   "name": "wayfind",
-  "version": "2.0.14",
+  "version": "2.0.19",
   "description": "Team decision trail for AI-assisted development. The connective tissue between product, engineering, and strategy.",
   "bin": {
     "wayfind": "./bin/team-context.js"
@@ -28,7 +28,7 @@
   "files": [
     "bin/",
     "plugin/",
-    "marketplace.json",
+    ".claude-plugin/",
     "setup.sh",
     "install.sh",
     "uninstall.sh",

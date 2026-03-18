@@ -36,7 +36,7 @@ fi
 # ── Fast path: skip reindex if no conversation files changed ──────────────────
 LAST_RUN_FILE="$HOME/.claude/team-context/.last-reindex"
 if [ -f "$LAST_RUN_FILE" ]; then
-  CHANGED=$(find "$HOME/.claude/projects" -name "*.jsonl" -newer "$LAST_RUN_FILE" 2>/dev/null | head -1)
+  CHANGED=$(find "$HOME/.claude/projects" -name "*.jsonl" -newer "$LAST_RUN_FILE" -print -quit 2>/dev/null)
   if [ -z "$CHANGED" ]; then
     # No conversation files changed — skip expensive reindex, just sync journals
     $WAYFIND journal sync 2>/dev/null &

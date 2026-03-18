@@ -1,0 +1,14 @@
+{
+  "name": "usewayfind",
+  "owner": {
+    "name": "Wayfind",
+    "url": "https://github.com/usewayfind"
+  },
+  "plugins": [
+    {
+      "name": "wayfind",
+      "source": "./plugin",
+      "description": "Team decision trail — session memory, decision journals, and team digests for AI-assisted development."
+    }
+  ]
+}

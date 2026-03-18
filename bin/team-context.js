@@ -4448,7 +4448,7 @@ const COMMANDS = {
       // Files and directories to sync
       const syncItems = [
         'bin/', 'templates/', 'specializations/', 'plugin/', 'tests/', 'simulation/',
-        'backup/', '.github/', '.claude-plugin/', 'Dockerfile', 'package.json', 'setup.sh',
+        'backup/', '.github/', 'Dockerfile', 'package.json', 'marketplace.json', 'setup.sh',
         'install.sh', 'uninstall.sh', 'doctor.sh', 'journal-summary.sh',
         'BOOTSTRAP_PROMPT.md', '.gitattributes', '.gitignore', 'VERSIONS.md',
       ];

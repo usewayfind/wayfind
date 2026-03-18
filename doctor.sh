@@ -17,37 +17,9 @@ info() { echo "  $1"; }
 
 ISSUES=0
 
-is_plugin_installed() {
-    # Check if wayfind is installed as a Claude Code plugin
-    # Method 1: Check enabledPlugins in settings.json (authoritative — what Claude Code reads)
-    local SETTINGS="$HOME/.claude/settings.json"
-    if [ -f "$SETTINGS" ] && grep -q '"wayfind@' "$SETTINGS" 2>/dev/null; then
-        return 0
-    fi
-
-    # Method 2: Check plugin files on disk
-    local PLUGINS_DIR="$HOME/.claude/plugins"
-    if [ -d "$PLUGINS_DIR" ]; then
-        if find "$PLUGINS_DIR" -path '*/wayfind/plugin/.claude-plugin/plugin.json' -print -quit 2>/dev/null | grep -q .; then
-            return 0
-        fi
-        if find "$PLUGINS_DIR" -name 'plugin.json' -exec grep -l '"name": "wayfind"' {} + 2>/dev/null | grep -q .; then
-            return 0
-        fi
-    fi
-    return 1
-}
-
 check_hook_registered() {
     echo ""
     echo "Hook registration"
-
-    # If installed as a plugin, hooks are provided by the plugin — skip legacy checks
-    if is_plugin_installed; then
-        ok "Installed as Claude Code plugin (hooks provided by plugin)"
-        return
-    fi
-
     local SETTINGS="$HOME/.claude/settings.json"
     if [ ! -f "$SETTINGS" ]; then
         err "settings.json not found — hook is not registered"

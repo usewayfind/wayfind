@@ -66,7 +66,7 @@ This usually means those journal entries haven't been indexed yet. Check:
 
 ### How do I change when digests are sent?
 
-Edit your `connectors.json` schedule, or ask your team admin to update the container's cron schedule. Per-member scheduling is tracked in [#68](https://github.com/leizerowicz/wayfind/issues/68).
+Edit your `connectors.json` schedule, or ask your team admin to update the container's cron schedule. Per-member scheduling is tracked in [#68](https://github.com/usewayfind/wayfind/issues/68).
 
 ---
 
@@ -78,7 +78,7 @@ Set `TEAM_CONTEXT_SKIP_EXPORT=1` in the environment when spawning worker agents.
 
 ### Does Wayfind support a push API for agent frameworks?
 
-Not yet. Currently decisions are extracted from Claude Code session transcripts. A push API (`wayfind decision` CLI / HTTP endpoint) for framework-agnostic intake is being designed in [#79](https://github.com/leizerowicz/wayfind/issues/79).
+Not yet. Currently decisions are extracted from Claude Code session transcripts. A push API (`wayfind decision` CLI / HTTP endpoint) for framework-agnostic intake is being designed in [#79](https://github.com/usewayfind/wayfind/issues/79).
 
 ---
 

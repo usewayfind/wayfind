@@ -12,7 +12,7 @@ let enabled = false;
 function init() {
   if (client !== null) return; // already initialized (or disabled)
 
-  enabled = (process.env.TEAM_CONTEXT_TELEMETRY || '').toLowerCase() === 'true';
+  enabled = (process.env.TEAM_CONTEXT_TELEMETRY || '').toLowerCase() !== 'false';
   if (!enabled) {
     client = false; // marker: checked but disabled
     return;

@@ -14,6 +14,7 @@ on:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    if: github.repository == 'usewayfind/wayfind'
     environment: npm
     permissions:
       contents: read

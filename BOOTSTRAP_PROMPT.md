@@ -26,7 +26,7 @@ Once both steps complete:
 5. Run `wayfind whoami --setup` so I can provide my Slack user ID (used for @mentions and DMs)
 6. Ask me if I want to set up team context (/wayfind:init-team) for shared journals,
    digests, and product state
-7. Let me know about opt-in telemetry (set TEAM_CONTEXT_TELEMETRY=true to enable)
+7. Let me know that anonymous usage telemetry is enabled by default (set TEAM_CONTEXT_TELEMETRY=false to opt out)
 ```
 
 ---

@@ -2215,18 +2215,70 @@ Commands:
     const repoSlug = getRepoSlug();
     const repoName = path.basename(process.cwd());
 
-    // Read recent journal entries or README for context
+    // Gather context from multiple signals for better suggestions
     let context = `Repository: ${repoSlug}\n`;
+
+    // 1. team-state.md (richest signal — architecture, domain language, sprint focus)
+    const teamStatePath = path.join(process.cwd(), '.claude', 'team-state.md');
+    if (fs.existsSync(teamStatePath)) {
+      const teamState = fs.readFileSync(teamStatePath, 'utf8');
+      context += `Team state (first 2000 chars):\n${teamState.slice(0, 2000)}\n`;
+    }
+
+    // 2. README
     const readmePath = ['README.md', 'readme.md', 'Readme.md'].find(f => fs.existsSync(path.join(process.cwd(), f)));
     if (readmePath) {
       const readme = fs.readFileSync(path.join(process.cwd(), readmePath), 'utf8');
       context += `README (first 1000 chars):\n${readme.slice(0, 1000)}\n`;
     }
+
+    // 3. package.json (Node repos)
     const packagePath = path.join(process.cwd(), 'package.json');
     if (fs.existsSync(packagePath)) {
       const pkg = readJSONFile(packagePath);
       if (pkg && pkg.description) context += `package.json description: ${pkg.description}\n`;
       if (pkg && pkg.keywords) context += `keywords: ${(pkg.keywords || []).join(', ')}\n`;
+    }
+
+    // 4. Top-level directory listing (reveals project structure)
+    try {
+      const entries = fs.readdirSync(process.cwd(), { withFileTypes: true });
+      const dirs = entries.filter(e => e.isDirectory() && !e.name.startsWith('.')).map(e => e.name);
+      const files = entries.filter(e => e.isFile() && !e.name.startsWith('.')).map(e => e.name);
+      context += `Top-level dirs: ${dirs.join(', ')}\n`;
+      context += `Top-level files: ${files.slice(0, 20).join(', ')}\n`;
+    } catch { /* best effort */ }
+
+    // 5. Recent journal entries mentioning this repo (from team-context)
+    const teamPath = getTeamContextPath();
+    if (teamPath) {
+      const journalsDir = path.join(teamPath, 'journals');
+      if (fs.existsSync(journalsDir)) {
+        try {
+          const journalFiles = fs.readdirSync(journalsDir)
+            .filter(f => f.endsWith('.md'))
+            .sort()
+            .slice(-10); // last 10 journals
+          const repoBasename = path.basename(process.cwd());
+          let journalContext = '';
+          for (const jf of journalFiles) {
+            const content = fs.readFileSync(path.join(journalsDir, jf), 'utf8');
+            if (content.includes(repoBasename) || content.includes(repoSlug)) {
+              // Extract lines mentioning this repo (± context)
+              const lines = content.split('\n');
+              const relevant = lines.filter(l =>
+                l.includes(repoBasename) || l.includes(repoSlug)
+              );
+              if (relevant.length > 0) {
+                journalContext += relevant.slice(0, 10).join('\n') + '\n';
+              }
+            }
+          }
+          if (journalContext) {
+            context += `Recent journal mentions:\n${journalContext.slice(0, 1500)}\n`;
+          }
+        } catch { /* best effort */ }
+      }
     }
 
     const llmConfig = {
@@ -2235,11 +2287,17 @@ Commands:
       api_key_env: 'ANTHROPIC_API_KEY',
     };
 
-    const systemPrompt = `You suggest concise feature tags for a software repository. Tags describe what features live in this repo, in both technical terms (component names, services) and business/domain language (user-facing features). Return a JSON object with two fields: "tags" (array of 5-15 short lowercase tags) and "description" (one sentence describing the repo's purpose). Return only valid JSON.`;
+    const systemPrompt = `You suggest concise feature tags for a software repository. These tags help non-engineers (PMs, designers) find the right repo when asking questions like "how do RFPs work?" or "what changed with hotel matching?"
+
+Prioritize business/domain language (rfp, bookings, hotel import, proposals) over technical terms (azure-functions, cosmos-db). Include a few technical tags for engineers, but lead with what the product DOES, not how it's built.
+
+Return a JSON object with two fields: "tags" (array of 5-15 short lowercase tags, business terms first) and "description" (one sentence describing the repo's purpose in product language). Return only valid JSON, no markdown.`;
 
     console.log(`Analyzing ${repoSlug}...`);
     try {
-      const raw = await llm.call(llmConfig, systemPrompt, context);
+      let raw = await llm.call(llmConfig, systemPrompt, context);
+      // Strip markdown code fences if the LLM wraps the JSON
+      raw = raw.trim().replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/,'');
       const parsed = JSON.parse(raw.trim());
       console.log(`\nSuggested tags: ${(parsed.tags || []).join(', ')}`);
       if (parsed.description) console.log(`Description: ${parsed.description}`);

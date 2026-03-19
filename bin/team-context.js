@@ -4629,8 +4629,8 @@ const COMMANDS = {
     desc: 'Check if installed version meets team minimum (used by hooks)',
     run: () => runCheckVersion(),
   },
-  update: {
-    desc: 'Re-sync hooks and commands from the installed Wayfind package',
+  resync: {
+    desc: 'Re-sync hooks and commands without npm update (used internally by setup.sh)',
     run: () => runUpdate(),
   },
   'migrate-to-plugin': {
@@ -4990,7 +4990,7 @@ function showHelp() {
   console.log('  wayfind standup --all          Daily standup across all repos');
   console.log('');
   console.log('Maintenance:');
-  console.log('  wayfind update                Re-sync hooks and commands from package');
+  console.log('  wayfind update                Update from npm, re-sync hooks, update container');
   console.log('  wayfind migrate-to-plugin     Remove old hooks/commands — let the plugin handle them');
   console.log('  wayfind doctor                Check installation health');
   console.log('');

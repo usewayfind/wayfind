@@ -604,6 +604,11 @@ function searchText(query, options = {}) {
 function applyFilters(entry, filters) {
   if (isRepoExcluded(entry.repo)) return false;
   if (filters.repo && entry.repo.toLowerCase() !== filters.repo.toLowerCase()) return false;
+  if (filters.repos && filters.repos.length > 0) {
+    const lower = (entry.repo || '').toLowerCase();
+    const matches = filters.repos.some(r => lower === r.toLowerCase() || lower.endsWith('/' + r.split('/').pop().toLowerCase()));
+    if (!matches) return false;
+  }
   if (filters.since && entry.date < filters.since) return false;
   if (filters.until && entry.date > filters.until) return false;
   if (filters.drifted !== undefined && entry.drifted !== filters.drifted) return false;

@@ -10,6 +10,10 @@ const telemetry = require('./telemetry');
 
 // ── Slack connection state (for healthcheck) ────────────────────────────────
 let slackConnected = false;
+
+// ── Feature map (loaded at startup, reloaded on-demand) ──────────────────────
+/** In-memory feature map: { "org/repo": { tags: string[], description: string } } */
+let featureMap = null;
 let slackLastConnected = null;
 let slackLastDisconnected = null;
 
@@ -51,6 +55,62 @@ Rules:
 - If thread history was truncated, note that you only have partial history and may be missing earlier context.
 - Format your response in markdown. Use bullet points for lists.
 - Do not invent information that isn't in the provided context.`;
+}
+
+// ── Feature map ──────────────────────────────────────────────────────────────
+
+/**
+ * Load features.json from the team-context repo into memory.
+ * Silently no-ops if the file doesn't exist.
+ * @param {Object} config - Bot config (uses team_context_dir or TEAM_CONTEXT_TEAM_CONTEXT_DIR)
+ */
+function loadFeatureMap(config) {
+  const teamDir = config.team_context_dir || process.env.TEAM_CONTEXT_TEAM_CONTEXT_DIR || '';
+  if (!teamDir) return;
+  const featuresFile = path.join(teamDir, 'features.json');
+  try {
+    const raw = fs.readFileSync(featuresFile, 'utf8');
+    featureMap = JSON.parse(raw);
+  } catch {
+    featureMap = null;
+  }
+}
+
+/**
+ * Use Haiku to determine which repos are relevant to a query, based on the feature map.
+ * Returns an array of repo slugs (e.g. ["org/api-service", "org/analytics"]).
+ * Returns null if routing cannot be determined (map empty, LLM fails, etc.).
+ * @param {string} query
+ * @param {Object} map - Feature map object
+ * @param {Object} llmConfig - LLM configuration
+ * @returns {Promise<string[]|null>}
+ */
+async function routeQueryToRepos(query, map, llmConfig) {
+  if (!map || Object.keys(map).length === 0) return null;
+
+  const repoList = Object.entries(map).map(([repo, entry]) => {
+    const tags = (entry.tags || []).join(', ');
+    const desc = entry.description ? ` — ${entry.description}` : '';
+    return `${repo}: ${tags}${desc}`;
+  }).join('\n');
+
+  const systemPrompt = `You are a routing assistant. Given a user query and a list of repositories with their feature tags, return a JSON array of repository slugs (e.g. ["org/repo"]) that are most relevant to the query. Return only the repos that are clearly relevant. If no repos match, return an empty array. Return only valid JSON — no explanation.`;
+
+  const userContent = `Query: ${query}\n\nRepositories:\n${repoList}`;
+
+  const haikuConfig = {
+    ...llmConfig,
+    model: process.env.TEAM_CONTEXT_HAIKU_MODEL || 'claude-haiku-4-5-20251001',
+  };
+
+  try {
+    const raw = await llm.call(haikuConfig, systemPrompt, userContent);
+    const parsed = JSON.parse(raw.trim());
+    if (Array.isArray(parsed)) return parsed;
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -503,6 +563,9 @@ async function searchDecisionTrail(query, config) {
   }
   if (config.journal_dir) {
     searchOpts.journalDir = config.journal_dir;
+  }
+  if (config._repoFilter && config._repoFilter.length > 0) {
+    searchOpts.repos = config._repoFilter;
   }
 
   // Resolve temporal references to date filters
@@ -984,6 +1047,19 @@ async function handleQuery(query, config, threadHistory) {
     return { text: promptResult, results: [], _promptQuery: true };
   }
 
+  // On-demand feature map reload — user signals they just updated features
+  if (/\b(?:just\s+(?:added|updated|set|ran)\s+(?:features?|wayfind\s+features?))\b/i.test(query) ||
+      /\bwayfind\s+features\s+(?:add|set|describe)\b/i.test(query)) {
+    loadFeatureMap(config);
+    const count = featureMap ? Object.keys(featureMap).length : 0;
+    return {
+      text: count > 0
+        ? `Feature map reloaded. I now know about ${count} repo(s): ${Object.keys(featureMap).join(', ')}`
+        : 'Feature map reloaded, but no repos are configured yet. Run `wayfind features add` in a repo.',
+      results: [],
+    };
+  }
+
   const intent = classifyIntent(query);
   const llmConfig = config.llm || {};
   const contentOpts = {};
@@ -1061,7 +1137,27 @@ async function handleQuery(query, config, threadHistory) {
         (priorDates.until !== priorDates.since ? ` ${priorDates.until}` : '');
     }
   }
-  const results = await searchDecisionTrail(searchQuery, config);
+
+  // Feature map routing: if a map exists, ask Haiku which repos are relevant
+  let repoFilter = null;
+  if (featureMap && Object.keys(featureMap).length > 0) {
+    const routedRepos = await routeQueryToRepos(query, featureMap, llmConfig);
+    if (routedRepos !== null) {
+      if (routedRepos.length === 0) {
+        return {
+          text: "I couldn't determine which repositories are relevant to your question. If this seems wrong, run `wayfind features add` in the relevant repo(s) and try again.",
+          results: [],
+        };
+      }
+      repoFilter = routedRepos;
+    }
+  }
+
+  const searchConfig = repoFilter
+    ? { ...config, _repoFilter: repoFilter }
+    : config;
+
+  const results = await searchDecisionTrail(searchQuery, searchConfig);
   const answer = await synthesizeAnswer(query, results, llmConfig, contentOpts, threadHistory);
   const text = formatResponse(answer, results);
   return {
@@ -1140,6 +1236,12 @@ async function start(config) {
   // Build members directory path for Slack user identity resolution
   const teamContextDir = config.team_context_dir || process.env.TEAM_CONTEXT_TEAM_CONTEXT_DIR || null;
   const membersDir = teamContextDir ? path.join(teamContextDir, 'members') : null;
+
+  // Load feature map for repo routing
+  loadFeatureMap(config);
+  if (featureMap && Object.keys(featureMap).length > 0) {
+    console.log(`Loaded feature map: ${Object.keys(featureMap).length} repo(s)`);
+  }
 
   // Handle @mentions
   app.event('app_mention', async ({ event, client }) => {

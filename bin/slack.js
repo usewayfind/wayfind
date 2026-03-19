@@ -194,39 +194,51 @@ function postToWebhook(webhookUrl, payload) {
 
 /**
  * Deliver a digest to Slack via chat.postMessage (bot token).
- * Returns the message ts for reaction tracking.
+ * Posts a scannable one-liner header to the channel, then the full digest
+ * content as the first thread reply. Reaction tracking keys on the digest
+ * reply ts, not the header.
  *
  * @param {string} botToken - Slack bot OAuth token (xoxb-...)
  * @param {string} channel - Slack channel ID or name
- * @param {string} content - Formatted mrkdwn content (already converted)
+ * @param {string} header - One-liner header (e.g. ":compass: *Wayfind Digest* (Mar 11–18)")
+ * @param {string} content - Full digest body as mrkdwn
  * @param {string} personaName - Persona ID
  * @returns {Promise<{ ok: true, persona: string, ts: string, channel: string }>}
  */
-async function deliverViaBot(botToken, channel, content, personaName) {
+async function deliverViaBot(botToken, channel, header, content, personaName) {
   const { WebClient } = require('@slack/web-api');
   const client = new WebClient(botToken);
 
-  const truncated = content.length > 3900 ? content.slice(0, 3900) + '\n\n_...truncated_' : content;
-
-  const result = await client.chat.postMessage({
+  // Post scannable header to channel
+  const headerResult = await client.chat.postMessage({
     channel,
+    text: header,
+    unfurl_links: false,
+  });
+
+  // Post full digest as first thread reply
+  const truncated = content.length > 3900 ? content.slice(0, 3900) + '\n\n_...truncated_' : content;
+  const digestResult = await client.chat.postMessage({
+    channel,
+    thread_ts: headerResult.ts,
     text: truncated,
     unfurl_links: false,
   });
 
-  // Post a threaded follow-up asking for feedback
+  // Post feedback prompt as second thread reply
   try {
     await client.chat.postMessage({
       channel,
-      thread_ts: result.ts,
-      text: '_React to the digest or reply here with feedback — what was useful? What was missing? Your input shapes future digests._',
+      thread_ts: headerResult.ts,
+      text: '_React to the digest above or reply here with feedback — what was useful? What was missing? Your input shapes future digests._',
       unfurl_links: false,
     });
   } catch (err) {
     // Non-fatal — digest was delivered, feedback prompt is optional
   }
 
-  return { ok: true, persona: personaName, ts: result.ts, channel: result.channel };
+  // Return digest reply ts (not header ts) so reactions land on the content
+  return { ok: true, persona: personaName, ts: digestResult.ts, channel: digestResult.channel };
 }
 
 // ── Deliver ─────────────────────────────────────────────────────────────────
@@ -249,7 +261,8 @@ async function deliver(webhookUrl, digestContent, personaName, dateRange, option
   const label = personaName === 'unified' ? 'Wayfind' : capitalize(personaName);
   const range = formatDateRange(dateRange);
   const mrkdwn = markdownToMrkdwn(digestContent);
-  const formattedText = `${emoji} *${label} Digest* (${range})\n\n${mrkdwn}`;
+  const header = `${emoji} *${label} Digest* (${range})`;
+  const formattedText = `${header}\n\n${mrkdwn}`;
 
   const payload = {
     text: formattedText,
@@ -270,7 +283,7 @@ async function deliver(webhookUrl, digestContent, personaName, dateRange, option
   const opts = options || {};
   if (opts.botToken && opts.channel) {
     try {
-      return await deliverViaBot(opts.botToken, opts.channel, formattedText, personaName);
+      return await deliverViaBot(opts.botToken, opts.channel, header, mrkdwn, personaName);
     } catch (err) {
       console.error(`Bot delivery failed for ${personaName}, falling back to webhook: ${err.message}`);
     }

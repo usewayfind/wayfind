@@ -1,15 +1,14 @@
 ---
 name: session-protocol
-description: Wayfind session memory protocol — behavioral instructions for AI sessions. Elicitation prompts, drift detection, and state file conventions. The plugin's hooks handle automation (loading/saving); this skill defines how the AI should behave.
+description: Wayfind session memory protocol — state file locations and conventions. The plugin's hooks handle automation (loading/saving); this skill tells the AI where state files live.
 disable-model-invocation: false
 user-invocable: false
 ---
 
-## Wayfind — Session Behavior Protocol
+## Wayfind — Session Memory Protocol
 
-This skill defines behavioral instructions for AI sessions. Automation (state file loading,
-decision extraction, journal sync) is handled by the plugin's hooks — this skill covers
-the human-judgment parts that hooks can't automate.
+Automation (project index rebuild, decision extraction, journal sync) is handled by
+the plugin's hooks. This skill tells you where state files live so you can load context.
 
 ### State File Locations
 
@@ -29,24 +28,7 @@ the human-judgment parts that hooks can't automate.
 1. Read `~/.claude/global-state.md`
 2. Read `.claude/team-state.md` and `.claude/personal-state.md` in the current repo (fall back to `.claude/state.md` for legacy repos)
 3. Check the Memory Files table — load any `~/.claude/memory/` files whose keywords match this session's topic
-4. Summarize current state, then ask: **"What's the goal for this session? What does success look like?"**
-
-### Mid-Session — Drift Detection
-
-If work drifts from the stated goal, flag it:
-> *"Quick check — we set out to [goal]. This feels like [tangent]. Stay the course or pivot?"*
-
-### Elicitation Prompts
-
-When a technical or product decision is made without stated reasoning, ask ONE of:
-- "What alternatives did you consider?"
-- "What constraint or requirement drove this choice?"
-- "What would need to change for you to reverse this decision?"
-- "Who else on the team does this affect, and how?"
-- "What's the risk if this assumption is wrong?"
-
-Do not ask if the decision already includes reasoning, tradeoffs, or constraints.
-Do not ask more than once per decision. Do not ask during routine implementation.
+4. Briefly summarize current state for the user
 
 ### Rules
 

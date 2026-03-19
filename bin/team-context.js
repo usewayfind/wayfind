@@ -2061,6 +2061,248 @@ function commitAndPushTeamJournals(teamContextPath, copied) {
   }
 }
 
+// ── Features command ─────────────────────────────────────────────────────────
+
+/**
+ * Get the repo slug (org/repo) from the git remote origin URL.
+ * Falls back to the directory name if git remote is unavailable.
+ * @returns {string}
+ */
+function getRepoSlug() {
+  const result = spawnSync('git', ['remote', 'get-url', 'origin'], {
+    cwd: process.cwd(),
+    stdio: 'pipe',
+  });
+  if (result.status === 0) {
+    const url = result.stdout.toString().trim();
+    // Extract org/repo from https or ssh URLs
+    const match = url.match(/[:/]([^/]+\/[^/]+?)(?:\.git)?$/);
+    if (match) return match[1];
+  }
+  return path.basename(process.cwd());
+}
+
+/**
+ * Compile features.json in the team-context repo from the local repo's wayfind.json.
+ * Reads existing features.json, merges/updates the entry for this repo, writes back.
+ * @param {string} teamContextPath
+ * @param {string} repoSlug
+ * @param {Object} features - { tags, description }
+ */
+function updateFeaturesJson(teamContextPath, repoSlug, features) {
+  const featuresFile = path.join(teamContextPath, 'features.json');
+
+  // Pull latest before modifying to reduce conflicts
+  spawnSync('git', ['pull', '--rebase'], { cwd: teamContextPath, stdio: 'pipe', timeout: 30000 });
+
+  const existing = readJSONFile(featuresFile) || {};
+  existing[repoSlug] = {
+    ...(existing[repoSlug] || {}),
+    ...features,
+    updated_at: new Date().toISOString().slice(0, 10),
+  };
+  fs.writeFileSync(featuresFile, JSON.stringify(existing, null, 2) + '\n');
+
+  // Commit and push
+  const gitAdd = spawnSync('git', ['add', 'features.json'], { cwd: teamContextPath, stdio: 'pipe' });
+  if (gitAdd.status !== 0) {
+    console.error('git add features.json failed');
+    return;
+  }
+  const diffIndex = spawnSync('git', ['diff', '--cached', '--quiet'], { cwd: teamContextPath, stdio: 'pipe' });
+  if (diffIndex.status === 0) {
+    console.log('  features.json up to date — nothing to commit.');
+    return;
+  }
+  const msg = `Update features: ${repoSlug}`;
+  const gitCommit = spawnSync('git', ['commit', '-m', msg], { cwd: teamContextPath, stdio: 'pipe' });
+  if (gitCommit.status !== 0) {
+    console.error('git commit features.json failed');
+    return;
+  }
+  const gitPush = spawnSync('git', ['push'], { cwd: teamContextPath, stdio: 'pipe', timeout: 30000 });
+  if (gitPush.status !== 0) {
+    const stderr = (gitPush.stderr || '').toString().trim();
+    if (stderr.includes('fetch first') || stderr.includes('non-fast-forward')) {
+      spawnSync('git', ['pull', '--rebase'], { cwd: teamContextPath, stdio: 'pipe', timeout: 30000 });
+      spawnSync('git', ['push'], { cwd: teamContextPath, stdio: 'pipe', timeout: 30000 });
+    }
+  }
+  console.log('  Synced features.json to team-context repo.');
+}
+
+/**
+ * Features command: manage per-repo feature tags for Slack bot routing.
+ * Usage:
+ *   wayfind features add <tag1> [tag2] ...   — append tags
+ *   wayfind features set <tag1> [tag2] ...   — replace all tags
+ *   wayfind features describe <text>         — set description
+ *   wayfind features list                    — list all repos in team features map
+ *   wayfind features search <query>          — keyword search over features map
+ *   wayfind features suggest                 — suggest tags via LLM
+ */
+async function runFeatures(args) {
+  const sub = args[0];
+  const rest = args.slice(1);
+
+  if (!sub || sub === 'help') {
+    console.log(`wayfind features — manage feature-to-repo map for Slack bot routing
+
+Commands:
+  add <tag1> [tag2...]   Add tags to this repo (appends to existing)
+  set <tag1> [tag2...]   Replace all tags for this repo
+  describe <text>        Set a description for this repo
+  list                   Show all repos in the team features map
+  search <query>         Search repos by tag or description keyword
+  suggest                Use AI to suggest tags based on repo content`);
+    return;
+  }
+
+  if (sub === 'list') {
+    const teamPath = getTeamContextPath();
+    if (!teamPath) {
+      console.error('No team configured. Run "wayfind context add" first.');
+      process.exit(1);
+    }
+    const featuresFile = path.join(teamPath, 'features.json');
+    const map = readJSONFile(featuresFile);
+    if (!map || Object.keys(map).length === 0) {
+      console.log('No feature map found. Run "wayfind features add" in a repo to get started.');
+      return;
+    }
+    for (const [repo, entry] of Object.entries(map).sort()) {
+      const tags = (entry.tags || []).join(', ') || '—';
+      const desc = entry.description ? `  ${entry.description}` : '';
+      console.log(`${repo}\n  tags: ${tags}${desc}\n`);
+    }
+    return;
+  }
+
+  if (sub === 'search') {
+    if (rest.length === 0) {
+      console.error('Usage: wayfind features search <query>');
+      process.exit(1);
+    }
+    const query = rest.join(' ').toLowerCase();
+    const teamPath = getTeamContextPath();
+    if (!teamPath) {
+      console.error('No team configured.');
+      process.exit(1);
+    }
+    const featuresFile = path.join(teamPath, 'features.json');
+    const map = readJSONFile(featuresFile) || {};
+    const matches = Object.entries(map).filter(([repo, entry]) => {
+      const text = [
+        repo,
+        ...(entry.tags || []),
+        entry.description || '',
+      ].join(' ').toLowerCase();
+      return text.includes(query);
+    });
+    if (matches.length === 0) {
+      console.log(`No repos match "${query}".`);
+      return;
+    }
+    for (const [repo, entry] of matches) {
+      const tags = (entry.tags || []).join(', ') || '—';
+      console.log(`${repo} — ${tags}${entry.description ? ' — ' + entry.description : ''}`);
+    }
+    return;
+  }
+
+  if (sub === 'suggest') {
+    const llm = require('./connectors/llm');
+    const repoSlug = getRepoSlug();
+    const repoName = path.basename(process.cwd());
+
+    // Read recent journal entries or README for context
+    let context = `Repository: ${repoSlug}\n`;
+    const readmePath = ['README.md', 'readme.md', 'Readme.md'].find(f => fs.existsSync(path.join(process.cwd(), f)));
+    if (readmePath) {
+      const readme = fs.readFileSync(path.join(process.cwd(), readmePath), 'utf8');
+      context += `README (first 1000 chars):\n${readme.slice(0, 1000)}\n`;
+    }
+    const packagePath = path.join(process.cwd(), 'package.json');
+    if (fs.existsSync(packagePath)) {
+      const pkg = readJSONFile(packagePath);
+      if (pkg && pkg.description) context += `package.json description: ${pkg.description}\n`;
+      if (pkg && pkg.keywords) context += `keywords: ${(pkg.keywords || []).join(', ')}\n`;
+    }
+
+    const llmConfig = {
+      provider: 'anthropic',
+      model: process.env.TEAM_CONTEXT_HAIKU_MODEL || 'claude-haiku-4-5-20251001',
+      api_key_env: 'ANTHROPIC_API_KEY',
+    };
+
+    const systemPrompt = `You suggest concise feature tags for a software repository. Tags describe what features live in this repo, in both technical terms (component names, services) and business/domain language (user-facing features). Return a JSON object with two fields: "tags" (array of 5-15 short lowercase tags) and "description" (one sentence describing the repo's purpose). Return only valid JSON.`;
+
+    console.log(`Analyzing ${repoSlug}...`);
+    try {
+      const raw = await llm.call(llmConfig, systemPrompt, context);
+      const parsed = JSON.parse(raw.trim());
+      console.log(`\nSuggested tags: ${(parsed.tags || []).join(', ')}`);
+      if (parsed.description) console.log(`Description: ${parsed.description}`);
+      console.log(`\nTo apply: wayfind features set ${(parsed.tags || []).join(' ')}`);
+      if (parsed.description) console.log(`           wayfind features describe "${parsed.description}"`);
+    } catch (err) {
+      console.error(`Suggestion failed: ${err.message}`);
+      process.exit(1);
+    }
+    return;
+  }
+
+  // add / set / describe — all require writing to .claude/wayfind.json and syncing
+  if (sub === 'add' || sub === 'set' || sub === 'describe') {
+    if (rest.length === 0) {
+      console.error(`Usage: wayfind features ${sub} <value...>`);
+      process.exit(1);
+    }
+
+    const claudeDir = path.join(process.cwd(), '.claude');
+    fs.mkdirSync(claudeDir, { recursive: true });
+    const bindingFile = path.join(claudeDir, 'wayfind.json');
+    const binding = readJSONFile(bindingFile) || {};
+
+    if (sub === 'describe') {
+      binding.features = binding.features || {};
+      binding.features.description = rest.join(' ');
+    } else if (sub === 'set') {
+      binding.features = binding.features || {};
+      binding.features.tags = rest.map(t => t.toLowerCase().replace(/^#/, ''));
+    } else if (sub === 'add') {
+      binding.features = binding.features || {};
+      const newTags = rest.map(t => t.toLowerCase().replace(/^#/, ''));
+      const existing = binding.features.tags || [];
+      binding.features.tags = [...new Set([...existing, ...newTags])];
+    }
+
+    fs.writeFileSync(bindingFile, JSON.stringify(binding, null, 2) + '\n');
+
+    const repoSlug = getRepoSlug();
+    const tags = binding.features.tags || [];
+    const description = binding.features.description || '';
+
+    if (sub === 'describe') {
+      console.log(`Set description for ${repoSlug}: "${description}"`);
+    } else {
+      console.log(`Tags for ${repoSlug}: ${tags.join(', ')}`);
+    }
+
+    // Sync to team-context repo if configured
+    const teamPath = getTeamContextPath();
+    if (teamPath) {
+      updateFeaturesJson(teamPath, repoSlug, { tags, description });
+    } else {
+      console.log('  (No team configured — skipping team-context sync)');
+    }
+    return;
+  }
+
+  console.error(`Unknown subcommand: ${sub}. Run "wayfind features help" for usage.`);
+  process.exit(1);
+}
+
 // ── Standup command ─────────────────────────────────────────────────────────
 
 /**
@@ -4370,6 +4612,10 @@ const COMMANDS = {
     desc: 'Show cross-project status (or rebuild Active Projects table)',
     run: (args) => runStatus(args),
   },
+  features: {
+    desc: 'Manage feature-to-repo map for Slack bot routing (add, set, describe, list, search, suggest)',
+    run: (args) => runFeatures(args),
+  },
   standup: {
     desc: 'Show a daily standup summary (last session, plan, blockers)',
     run: (args) => runStandup(args),
@@ -4448,7 +4694,7 @@ const COMMANDS = {
       // Files and directories to sync
       const syncItems = [
         'bin/', 'templates/', 'specializations/', 'plugin/', 'tests/', 'simulation/',
-        'backup/', '.github/', 'Dockerfile', 'package.json', 'marketplace.json', 'setup.sh',
+        'backup/', '.github/', '.claude-plugin/', 'Dockerfile', 'package.json', 'setup.sh',
         'install.sh', 'uninstall.sh', 'doctor.sh', 'journal-summary.sh',
         'BOOTSTRAP_PROMPT.md', '.gitattributes', '.gitignore', 'VERSIONS.md',
       ];
@@ -4720,6 +4966,60 @@ function spawn(cmd, args) {
   process.exit(result.status == null ? 1 : result.status);
 }
 
+// --- Update notifier --------------------------------------------------------
+// Checks npm registry in the background, caches the result for 24h,
+// and prints a one-liner on next run if a newer version is available.
+// Users can silence with NO_UPDATE_NOTIFIER=1.
+
+const UPDATE_CHECK_FILE = path.join(WAYFIND_DIR, '.update-check.json');
+const UPDATE_CHECK_INTERVAL = 24 * 60 * 60 * 1000; // 24 hours
+
+function checkForUpdateBackground() {
+  if (process.env.NO_UPDATE_NOTIFIER) return;
+  try {
+    if (fs.existsSync(UPDATE_CHECK_FILE)) {
+      const cached = JSON.parse(fs.readFileSync(UPDATE_CHECK_FILE, 'utf8'));
+      if (Date.now() - cached.checkedAt < UPDATE_CHECK_INTERVAL) return;
+    }
+  } catch { /* check anyway */ }
+  // Fire and forget — don't block the CLI
+  const child = spawnChild('npm', ['view', 'wayfind', 'version'], {
+    stdio: ['ignore', 'pipe', 'ignore'],
+    detached: true,
+    env: { ...process.env, NO_UPDATE_NOTIFIER: '1' },
+  });
+  let stdout = '';
+  child.stdout.on('data', (d) => { stdout += d; });
+  child.on('close', () => {
+    const latest = stdout.trim();
+    if (!latest || !/^\d+\.\d+\.\d+/.test(latest)) return;
+    try {
+      fs.mkdirSync(WAYFIND_DIR, { recursive: true });
+      fs.writeFileSync(UPDATE_CHECK_FILE, JSON.stringify({ latest, checkedAt: Date.now() }));
+    } catch { /* best effort */ }
+  });
+  child.unref();
+}
+
+function showUpdateNotice() {
+  if (process.env.NO_UPDATE_NOTIFIER) return;
+  try {
+    if (!fs.existsSync(UPDATE_CHECK_FILE)) return;
+    const { latest } = JSON.parse(fs.readFileSync(UPDATE_CHECK_FILE, 'utf8'));
+    const pkg = require(path.join(ROOT, 'package.json'));
+    if (!latest || latest === pkg.version) return;
+    // Simple semver comparison: split, compare numerically
+    const cur = pkg.version.split('.').map(Number);
+    const lat = latest.split('.').map(Number);
+    const isNewer = lat[0] > cur[0] || (lat[0] === cur[0] && lat[1] > cur[1]) ||
+      (lat[0] === cur[0] && lat[1] === cur[1] && lat[2] > cur[2]);
+    if (isNewer) {
+      console.error(`\n\x1b[33m  Update available: v${pkg.version} → v${latest}\x1b[0m`);
+      console.error(`\x1b[33m  Run \x1b[1mnpm update -g wayfind\x1b[22m to update\x1b[0m\n`);
+    }
+  } catch { /* best effort */ }
+}
+
 // --- Main ---
 
 const args = process.argv.slice(2);
@@ -4727,9 +5027,11 @@ const command = args[0] || 'help';
 const commandArgs = args.slice(1);
 
 async function main() {
+  checkForUpdateBackground();
   telemetry.capture('command_run', { command }, CLI_USER);
   if (COMMANDS[command]) {
     await COMMANDS[command].run(commandArgs);
+    showUpdateNotice();
     await telemetry.flush();
   } else {
     console.error(`Unknown command: ${command}`);

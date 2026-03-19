@@ -1,6 +1,6 @@
 ---
 name: init-memory
-description: Initialize Wayfind for the current repo. Creates .claude/team-state.md (tracked in git) and .claude/personal-state.md (gitignored), ensures correct .gitignore entries, appends session protocol to CLAUDE.md, and registers the repo in the global index. Safe to run multiple times (idempotent).
+description: Initialize Wayfind for the current repo. Creates .claude/team-state.md (tracked in git) and .claude/personal-state.md (gitignored), ensures correct .gitignore entries, cleans up legacy session protocol from CLAUDE.md, and registers the repo in the global index. Safe to run multiple times (idempotent).
 user-invocable: true
 ---
 
@@ -67,21 +67,6 @@ Last updated: [today's date]
 ## Current Sprint Focus
 <!-- Team-level "what are we working on right now" -->
 
-## Elicitation Prompts
-
-<!-- These prompts guide the AI to capture richer context at decision moments.
-     The answers aren't for you — they're for your teammates who read the digest. -->
-
-When a technical or product decision is made without stated reasoning, ask one of:
-- "What alternatives did you consider?"
-- "What constraint or requirement drove this choice?"
-- "What would need to change for you to reverse this decision?"
-- "Who else on the team does this affect, and how?"
-- "What's the risk if this assumption is wrong?"
-
-Do not ask if the decision already includes reasoning, tradeoffs, or constraints.
-Do not ask more than once per decision. Do not ask during routine implementation.
-
 ## Shared Gotchas
 <!-- Hard-won lessons. What surprised us. What NOT to do. -->
 ```
@@ -123,30 +108,17 @@ Check `.gitignore`. Ensure these lines are present:
 
 If any of those lines are missing, append them. If `.claude/` (as a directory) is already in `.gitignore`, remove it and replace with the four file-level entries above.
 
-## Step 4: Append Session Protocol to CLAUDE.md
+## Step 4: Clean up legacy session protocol from CLAUDE.md
 
-Read the repo's `CLAUDE.md`. If it does NOT already contain "Session State Protocol", append this:
+Read the repo's `CLAUDE.md` (if it exists). If it contains a "## Session State Protocol" section, **remove the entire section** — the plugin's session-protocol skill and hooks handle this now.
 
-```markdown
+Also remove the legacy "## Session State Protocol (AI Memory Kit)" variant if present.
 
-## Session State Protocol
+If the CLAUDE.md has no other content after removal, leave it with just the repo name heading.
 
-**At session start (REQUIRED):**
-1. Read `~/.claude/global-state.md` — preferences, active projects, memory file manifest
-2. Read `.claude/team-state.md` in this repo — shared team context: architecture decisions, conventions, sprint focus, gotchas
-3. Read `.claude/personal-state.md` in this repo — your personal context: current focus, working notes, opinions
-4. Check the Memory Files table in global-state.md — load any `~/.claude/memory/` files relevant to this session's topic
+Report: "Removed legacy Session State Protocol from CLAUDE.md — the plugin handles this now."
 
-**At session end (when user says stop/done/pause/tomorrow):**
-1. Update `.claude/team-state.md` with shared context: architecture decisions, conventions, gotchas the team should know
-2. Update `.claude/personal-state.md` with personal context: your next steps, working notes, opinions
-3. Do NOT update `~/.claude/global-state.md` — its Active Projects table is rebuilt automatically by `wayfind status`.
-4. If significant new cross-repo context was created (patterns, strategies, decisions), create or update a file in `~/.claude/memory/` and add it to the Memory Files manifest in global-state.md
-
-**Do NOT use external memory databases or CLI tools for state storage.** Use plain markdown files only.
-```
-
-If `CLAUDE.md` doesn't exist, create a minimal one with the repo name as a heading and the block above.
+If no session protocol section was found, skip silently.
 
 ## Step 5: Register State Files in Global Index
 
@@ -166,7 +138,7 @@ Tell the user:
 - `.claude/team-state.md` — created or already existed (committed to git, shared with team)
 - `.claude/personal-state.md` — created or already existed (gitignored, personal only)
 - `.gitignore` — updated or already correct
-- `CLAUDE.md` — protocol appended or already present
+- `CLAUDE.md` — legacy session protocol removed (or was already clean)
 - `global-state.md` — repo registered or already listed
 
 **If they haven't set up team context yet**, mention:

@@ -22,7 +22,6 @@ Or from the official Anthropic marketplace (once approved):
 - **Session memory protocol** — loads team and personal state files at session start, saves at session end
 - **Slash commands** — `/wayfind:init-memory`, `/wayfind:init-team`, `/wayfind:doctor`, `/wayfind:journal`, `/wayfind:standup`, `/wayfind:review-prs`
 - **Hooks** — auto-rebuild project index on session start, auto-extract decisions on session end
-- **Drift detection** — flags when work diverges from the stated session goal
 
 ### Tier 2: Plugin + npm CLI (`npm i -g wayfind`)
 
@@ -34,6 +33,24 @@ Everything in Tier 1, plus:
 - **Team coordination** — `wayfind team create/join`, shared context distribution
 - **Slack + Notion delivery** — digests post to Slack channels and Notion pages via GitHub Actions
 - **Bot mode** — `wayfind bot` runs a Slack bot for on-demand queries
+
+## Removing legacy session prompts
+
+If you installed Wayfind before the plugin existed, you likely have a "Session State Protocol"
+section in your CLAUDE.md files that tells the AI to ask "What's the goal for this session?"
+and flag drift. The plugin now handles session memory without these prompts.
+
+To clean up:
+
+1. **Run `/wayfind:init-memory`** in each repo — Step 4 removes the legacy protocol from CLAUDE.md automatically.
+
+2. **Or manually:** delete the `## Session State Protocol` section from these files:
+   - `~/CLAUDE.md`
+   - `~/.claude/CLAUDE.md`
+   - Each repo's `CLAUDE.md`
+
+The plugin's hooks and session-protocol skill handle state file loading without
+requiring any CLAUDE.md instructions or interactive prompts.
 
 ## Documentation
 

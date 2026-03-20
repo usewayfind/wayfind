@@ -8,6 +8,9 @@ Find the 5 most consequential product items from this period. "Consequential" me
 
 ## Rules
 
+- **Translate, don't transcribe.** If an engineering item made the cut, describe its product
+  implication — not its technical cause. "Hotel data gaps visible to customers in analytics"
+  not "nestedSource config missing in Function App." The reader is a PM, not a developer.
 - **Maximum 5 items.** If fewer than 5 things matter, output fewer. Never pad.
 - **Rank by consequence, not category.** Lead with the item that most affects customers or roadmap.
 - **No category headers.** No "Scope Drift" / "Customer Issues" sections. Just a ranked list.

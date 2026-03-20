@@ -7,9 +7,13 @@ const llm = require('./connectors/llm');
 const contentStore = require('./content-store');
 const telemetry = require('./telemetry');
 
+const intelligence = require('./intelligence');
+
 const HOME = process.env.HOME || process.env.USERPROFILE;
 const WAYFIND_DIR = path.join(HOME, '.claude', 'team-context');
 const ENV_FILE = path.join(WAYFIND_DIR, '.env');
+const ROOT = path.join(__dirname, '..');
+const DEFAULT_PERSONAS_PATH = path.join(ROOT, 'templates', 'personas.json');
 
 // Team repo allowlist — mirrors content-store.js logic for digest-time filtering.
 // When INCLUDE_REPOS is set, sections mentioning repos NOT on the list are removed.
@@ -71,6 +75,31 @@ function filterExcludedContent(content) {
   }
 
   return content;
+}
+
+// ── Persona loading ─────────────────────────────────────────────────────────
+
+/**
+ * Load active personas from user config or bundled default.
+ * Same resolution as team-context.js:readPersonas.
+ * @returns {Array<{id: string, name: string, description: string}>}
+ */
+function loadPersonas() {
+  const candidates = [
+    path.join(HOME, '.claude', 'team-context', 'personas.json'),
+    path.join(HOME, '.ai-memory', 'team-context', 'personas.json'),
+  ];
+  let configPath = null;
+  for (const p of candidates) {
+    if (fs.existsSync(p)) { configPath = p; break; }
+  }
+  if (!configPath) configPath = DEFAULT_PERSONAS_PATH;
+  try {
+    const data = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    return data.personas || [];
+  } catch {
+    return [];
+  }
 }
 
 // ── Env file helpers ────────────────────────────────────────────────────────
@@ -677,11 +706,23 @@ async function generateDigest(config, personaIds, sinceDate, onProgress) {
   journalContent = filterExcludedContent(journalContent);
   signalContent = filterExcludedContent(signalContent);
 
-  // Apply token budget
+  // Preserve original content refs for telemetry
+  const rawSignalContent = signalContent;
+  const rawJournalContent = journalContent;
+
+  // Intelligence layer: score items for persona relevance
+  const personas = loadPersonas();
+  let scores = null;
+  if (config.intelligence?.enabled !== false && personas.length > 0) {
+    const haikuConfig = {
+      provider: config.llm.provider,
+      model: config.intelligence?.model || 'claude-haiku-4-5-20251001',
+      api_key_env: config.llm.api_key_env,
+    };
+    scores = await intelligence.scoreItems(signalContent, journalContent, personas, haikuConfig);
+  }
+
   const maxInputChars = (config.llm && config.llm.max_input_chars) || 120000;
-  const budget = applyTokenBudget(signalContent, journalContent, maxInputChars);
-  signalContent = budget.signals;
-  journalContent = budget.journals;
 
   // Generate per-persona digests
   const digestDir = path.join(HOME, '.claude', 'team-context', 'digests');
@@ -696,8 +737,23 @@ async function generateDigest(config, personaIds, sinceDate, onProgress) {
     }
 
     const startTime = Date.now();
+
+    // Per-persona filtering: intelligence layer + token budget
+    let pSignals = signalContent;
+    let pJournals = journalContent;
+    if (scores) {
+      const threshold = config.intelligence?.thresholds?.[personaId]
+        ?? intelligence.DEFAULT_THRESHOLDS[personaId] ?? 1;
+      const allPersonaIds = personas.map(p => p.id);
+      ({ signals: pSignals, journals: pJournals } =
+        intelligence.filterForPersona(signalContent, journalContent, scores, personaId, threshold, allPersonaIds));
+    }
+    const budget = applyTokenBudget(pSignals, pJournals, maxInputChars);
+    pSignals = budget.signals;
+    pJournals = budget.journals;
+
     const promptContext = { teamContextDir: config.team_context_dir };
-    const { system, user } = buildPrompt(personaId, signalContent, journalContent, dateRange, promptContext);
+    const { system, user } = buildPrompt(personaId, pSignals, pJournals, dateRange, promptContext);
 
     // Debug: dump prompt if TEAM_CONTEXT_DEBUG_PROMPT is set
     if (process.env.TEAM_CONTEXT_DEBUG_PROMPT) {
@@ -729,10 +785,12 @@ async function generateDigest(config, personaIds, sinceDate, onProgress) {
     persona_count: personaIds.length,
     personas: personaIds.join(','),
     entry_count: storeResult.entryCount || 0,
-    journal_count: journalContent ? journalContent.split('\n---\n').length : 0,
-    signal_count: signalContent ? signalContent.split('\n---\n').length : 0,
+    journal_count: rawJournalContent ? rawJournalContent.split('\n---\n').length : 0,
+    signal_count: rawSignalContent ? rawSignalContent.split('\n---\n').length : 0,
     has_previous_digest: !!loadPreviousDigest(personaIds[0], toDate),
     has_team_context: !!loadTeamContext(config.team_context_dir),
+    intelligence_enabled: config.intelligence?.enabled !== false,
+    intelligence_items_scored: scores ? scores.length : 0,
   });
 
   // Write combined file
@@ -843,6 +901,7 @@ module.exports = {
   loadTeamContext,
   loadTeamMembers,
   loadPreviousDigest,
+  loadPersonas,
   buildFeedbackContext,
   buildPrompt,
   generateDigest,

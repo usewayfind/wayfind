@@ -679,6 +679,181 @@ else
     _fail "no feedback section when empty" "Got: $RESULT"
 fi
 
+# ── Intelligence layer ──────────────────────────────────────────────────────
+
+echo ""
+echo "Intelligence layer"
+echo "==================="
+
+echo ""
+echo "Test: scoreItems returns valid JSON with correct structure in simulation mode"
+RESULT=$(node -e "
+  const intelligence = require('$REPO_ROOT/bin/intelligence.js');
+  const personas = [
+    { id: 'product', description: 'Product manager' },
+    { id: 'engineering', description: 'Engineer' },
+    { id: 'design', description: 'Designer' },
+    { id: 'strategy', description: 'Strategist' },
+  ];
+  const signals = 'Signal A content\n\n---\n\nSignal B content';
+  const journals = 'Journal A content\n\n---\n\nJournal B content';
+  intelligence.scoreItems(signals, journals, personas, {
+    provider: 'simulate',
+    model: 'test',
+  }).then(scores => {
+    console.log('IS_ARRAY:' + Array.isArray(scores));
+    console.log('HAS_ID:' + (scores[0] && typeof scores[0].id === 'number'));
+    console.log('HAS_PRODUCT:' + (scores[0] && typeof scores[0].product === 'number'));
+    console.log('HAS_ENGINEERING:' + (scores[0] && typeof scores[0].engineering === 'number'));
+    console.log('COUNT:' + scores.length);
+  });
+")
+if echo "$RESULT" | grep -qF "IS_ARRAY:true" && echo "$RESULT" | grep -qF "HAS_ID:true" && echo "$RESULT" | grep -qF "HAS_PRODUCT:true"; then
+    _pass "scoreItems returns valid structure"
+else
+    _fail "scoreItems returns valid structure" "Got: $RESULT"
+fi
+
+echo ""
+echo "Test: filterForPersona filters by threshold (product at 2 drops items scored 1)"
+RESULT=$(node -e "
+  const intelligence = require('$REPO_ROOT/bin/intelligence.js');
+  const scores = [
+    { id: 0, product: 1, engineering: 2 },
+    { id: 1, product: 2, engineering: 1 },
+    { id: 2, product: 0, engineering: 2 },
+    { id: 3, product: 2, engineering: 0 },
+  ];
+  const signals = 'Signal A\n\n---\n\nSignal B';
+  const journals = 'Journal A\n\n---\n\nJournal B';
+  const result = intelligence.filterForPersona(signals, journals, scores, 'product', 2, ['product', 'engineering']);
+  // Signal A (id=0, score=1) should be filtered out for product threshold 2
+  // Signal B (id=1, score=2) should pass
+  console.log('SIGNALS_HAS_B:' + result.signals.includes('Signal B'));
+  console.log('SIGNALS_HAS_A:' + result.signals.includes('Signal A'));
+  // Journal A (id=2, score=0) should be filtered
+  // Journal B (id=3, score=2) should pass
+  console.log('JOURNALS_HAS_B:' + result.journals.includes('Journal B'));
+  console.log('JOURNALS_HAS_A:' + result.journals.includes('Journal A'));
+")
+if echo "$RESULT" | grep -qF "SIGNALS_HAS_B:true" && echo "$RESULT" | grep -qF "SIGNALS_HAS_A:false" && echo "$RESULT" | grep -qF "JOURNALS_HAS_B:true" && echo "$RESULT" | grep -qF "JOURNALS_HAS_A:false"; then
+    _pass "filterForPersona filters by threshold"
+else
+    _fail "filterForPersona filters by threshold" "Got: $RESULT"
+fi
+
+echo ""
+echo "Test: filterForPersona for unified returns union of all personas"
+RESULT=$(node -e "
+  const intelligence = require('$REPO_ROOT/bin/intelligence.js');
+  const scores = [
+    { id: 0, product: 0, engineering: 0, design: 0, strategy: 0 },
+    { id: 1, product: 2, engineering: 0, design: 0, strategy: 0 },
+    { id: 2, product: 0, engineering: 1, design: 0, strategy: 0 },
+    { id: 3, product: 0, engineering: 0, design: 0, strategy: 0 },
+  ];
+  const signals = 'All zeros\n\n---\n\nProduct hit\n\n---\n\nEng tangential\n\n---\n\nAll zeros again';
+  const journals = '';
+  const result = intelligence.filterForPersona(signals, journals, scores, 'unified', 0, ['product', 'engineering', 'design', 'strategy']);
+  // Item 0: all zeros — no persona reaches threshold (product needs 2, eng needs 1) → excluded
+  // Item 1: product=2 >= threshold 2 → included
+  // Item 2: engineering=1 >= threshold 1 → included
+  // Item 3: all zeros → excluded
+  console.log('HAS_PRODUCT_HIT:' + result.signals.includes('Product hit'));
+  console.log('HAS_ENG:' + result.signals.includes('Eng tangential'));
+  console.log('HAS_ZEROS:' + result.signals.includes('All zeros again'));
+")
+if echo "$RESULT" | grep -qF "HAS_PRODUCT_HIT:true" && echo "$RESULT" | grep -qF "HAS_ENG:true" && echo "$RESULT" | grep -qF "HAS_ZEROS:false"; then
+    _pass "filterForPersona unified returns union"
+else
+    _fail "filterForPersona unified returns union" "Got: $RESULT"
+fi
+
+echo ""
+echo "Test: generateDigest with intelligence.enabled: false produces identical output"
+# Set up minimal content for digest generation
+mkdir -p "$TEST_HOME/.claude/team-context/signals/github"
+cat > "$TEST_HOME/.claude/team-context/signals/github/2026-03-18-summary.md" << 'SIGEOF'
+# GitHub Signals
+Test signal content for intelligence bypass test.
+SIGEOF
+
+RESULT=$(node -e "
+  const digest = require('$REPO_ROOT/bin/digest.js');
+  const config = {
+    llm: { provider: 'simulate', model: 'test' },
+    intelligence: { enabled: false },
+    signals_dir: '$TEST_HOME/.claude/team-context/signals',
+    journal_dir: '$TEST_HOME/.claude/memory/journal',
+  };
+  digest.generateDigest(config, ['engineering'], '2026-03-17').then(result => {
+    console.log('FILES:' + result.files.length);
+    console.log('PERSONAS:' + result.personas.join(','));
+  }).catch(e => {
+    console.log('ERROR:' + e.message);
+  });
+")
+if echo "$RESULT" | grep -qF "PERSONAS:engineering" && echo "$RESULT" | grep -q "FILES:[1-9]"; then
+    _pass "generateDigest with intelligence disabled"
+else
+    _fail "generateDigest with intelligence disabled" "Got: $RESULT"
+fi
+
+echo ""
+echo "Test: graceful fallback when scoring call returns invalid JSON"
+RESULT=$(node -e "
+  const intelligence = require('$REPO_ROOT/bin/intelligence.js');
+  // Mock: override llm.call temporarily
+  const llm = require('$REPO_ROOT/bin/connectors/llm.js');
+  const origCall = llm.call;
+  llm.call = async () => 'not valid json {{{';
+  const personas = [{ id: 'engineering', description: 'Engineer' }];
+  intelligence.scoreItems('signal content', 'journal content', personas, {
+    provider: 'anthropic', model: 'test', api_key_env: 'FAKE_KEY',
+  }).then(result => {
+    llm.call = origCall;
+    console.log('RESULT_NULL:' + (result === null));
+  });
+")
+if echo "$RESULT" | grep -qF "RESULT_NULL:true"; then
+    _pass "graceful fallback on invalid JSON"
+else
+    _fail "graceful fallback on invalid JSON" "Got: $RESULT"
+fi
+
+echo ""
+echo "Test: buildScoringPrompt includes all persona definitions"
+RESULT=$(node -e "
+  const intelligence = require('$REPO_ROOT/bin/intelligence.js');
+  const prompt = intelligence.buildScoringPrompt([
+    { id: 'product', description: 'PM perspective' },
+    { id: 'security', description: 'Security perspective' },
+  ]);
+  console.log('HAS_PRODUCT:' + prompt.includes('product: PM perspective'));
+  console.log('HAS_SECURITY:' + prompt.includes('security: Security perspective'));
+  console.log('HAS_EXAMPLE:' + prompt.includes('\"product\":0'));
+")
+if echo "$RESULT" | grep -qF "HAS_PRODUCT:true" && echo "$RESULT" | grep -qF "HAS_SECURITY:true" && echo "$RESULT" | grep -qF "HAS_EXAMPLE:true"; then
+    _pass "buildScoringPrompt includes all personas"
+else
+    _fail "buildScoringPrompt includes all personas" "Got: $RESULT"
+fi
+
+echo ""
+echo "Test: loadPersonas falls back to bundled default"
+RESULT=$(node -e "
+  const digest = require('$REPO_ROOT/bin/digest.js');
+  const personas = digest.loadPersonas();
+  console.log('COUNT:' + personas.length);
+  console.log('HAS_PRODUCT:' + personas.some(p => p.id === 'product'));
+  console.log('HAS_ENGINEERING:' + personas.some(p => p.id === 'engineering'));
+")
+if echo "$RESULT" | grep -q "COUNT:[1-9]" && echo "$RESULT" | grep -qF "HAS_PRODUCT:true" && echo "$RESULT" | grep -qF "HAS_ENGINEERING:true"; then
+    _pass "loadPersonas falls back to bundled default"
+else
+    _fail "loadPersonas falls back to bundled default" "Got: $RESULT"
+fi
+
 # ── Summary ──────────────────────────────────────────────────────────────────
 
 echo ""

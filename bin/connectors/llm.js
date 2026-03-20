@@ -44,6 +44,15 @@ function loadDigestFixture(personaId) {
   }
 }
 
+function loadScoringFixture() {
+  const fixturePath = path.join(getRepoRoot(), 'simulation', 'fixtures', 'intelligence', 'scores.json');
+  try {
+    return fs.readFileSync(fixturePath, 'utf8');
+  } catch {
+    return '[]';
+  }
+}
+
 // ── HTTP helpers ─────────────────────────────────────────────────────────────
 
 /**
@@ -274,6 +283,9 @@ async function callCLI(config, systemPrompt, userContent) {
 async function call(config, systemPrompt, userContent) {
   // Simulation mode overrides any provider setting
   if (isSimulation() || config.provider === 'simulate') {
+    if (config._callType === 'scoring') {
+      return loadScoringFixture();
+    }
     const personaId = config._personaId || 'engineering';
     return loadDigestFixture(personaId);
   }

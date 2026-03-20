@@ -1,0 +1,12 @@
+[
+  {"id":0,"product":1,"engineering":2,"design":0,"strategy":1},
+  {"id":1,"product":2,"engineering":1,"design":2,"strategy":0},
+  {"id":2,"product":0,"engineering":2,"design":0,"strategy":0},
+  {"id":3,"product":2,"engineering":1,"design":1,"strategy":2},
+  {"id":4,"product":0,"engineering":1,"design":0,"strategy":0},
+  {"id":5,"product":1,"engineering":2,"design":1,"strategy":1},
+  {"id":6,"product":2,"engineering":0,"design":2,"strategy":1},
+  {"id":7,"product":0,"engineering":2,"design":0,"strategy":0},
+  {"id":8,"product":1,"engineering":1,"design":0,"strategy":2},
+  {"id":9,"product":0,"engineering":1,"design":0,"strategy":0}
+]

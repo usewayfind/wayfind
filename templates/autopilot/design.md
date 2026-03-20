@@ -8,6 +8,8 @@ Find the 5 most consequential design items from this period. "Consequential" mea
 
 ## Rules
 
+- **Translate to user impact.** If a code change made the cut, describe what the user sees or
+  interacts with differently. Translate technical changes into UX consequences.
 - **Maximum 5 items.** If fewer than 5 things matter, output fewer. Never pad.
 - **Rank by consequence, not category.** Lead with the item that most affects user experience.
 - **No category headers.** No "UX Consistency" / "Accessibility" sections. Just a ranked list.

@@ -8,6 +8,9 @@ Find the 5 most consequential strategic items from this period. "Consequential" 
 
 ## Rules
 
+- **Extract the strategic pattern.** If day-to-day engineering work made the cut, connect it to
+  business goals, competitive positioning, or resource allocation. The reader thinks in quarters,
+  not sprints.
 - **Maximum 5 items.** If fewer than 5 things matter, output fewer. Never pad.
 - **Rank by consequence, not category.** Lead with the item that most affects the business trajectory.
 - **No category headers.** No "Competitive" / "Strategic Drift" sections. Just a ranked list.

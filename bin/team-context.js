@@ -1018,10 +1018,32 @@ async function runDigest(args) {
       process.exit(1);
     }
 
+    // Build per-persona @mentions from intelligence scores + member profiles
+    const mentionsByPersona = {};
+    if (result.scores) {
+      const intelligence = require('./intelligence');
+      const teamContextPath = getTeamContextPath();
+      const membersDir = teamContextPath ? path.join(teamContextPath, 'members') : null;
+      if (membersDir && fs.existsSync(membersDir)) {
+        const memberFiles = fs.readdirSync(membersDir).filter(f => f.endsWith('.json'));
+        const members = memberFiles.map(f => {
+          try { return JSON.parse(fs.readFileSync(path.join(membersDir, f), 'utf8')); }
+          catch { return null; }
+        }).filter(Boolean);
+
+        for (const pid of personaIds) {
+          const mentions = intelligence.buildMentions(result.scores, members, pid);
+          const msg = intelligence.formatMentionsMessage(mentions);
+          if (msg) mentionsByPersona[pid] = msg;
+        }
+      }
+    }
+
     console.log('Delivering to Slack...');
     const deliveryResults = await slack.deliverAll(webhookUrl, result, personaIds, {
       botToken: process.env.SLACK_BOT_TOKEN,
       channel: process.env.SLACK_DIGEST_CHANNEL,
+      mentionsByPersona,
     });
     let failures = 0;
     const dateStr = result.dateRange.to;

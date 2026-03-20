@@ -203,9 +203,11 @@ function postToWebhook(webhookUrl, payload) {
  * @param {string} header - One-liner header (e.g. ":compass: *Wayfind Digest* (Mar 11–18)")
  * @param {string} content - Full digest body as mrkdwn
  * @param {string} personaName - Persona ID
+ * @param {Object} [extras] - Optional extras
+ * @param {string} [extras.mentionsMessage] - Pre-formatted @mentions message for thread reply
  * @returns {Promise<{ ok: true, persona: string, ts: string, channel: string }>}
  */
-async function deliverViaBot(botToken, channel, header, content, personaName) {
+async function deliverViaBot(botToken, channel, header, content, personaName, extras) {
   const { WebClient } = require('@slack/web-api');
   const client = new WebClient(botToken);
 
@@ -225,7 +227,22 @@ async function deliverViaBot(botToken, channel, header, content, personaName) {
     unfurl_links: false,
   });
 
-  // Post feedback prompt as second thread reply
+  // Post @mentions as thread reply (before feedback prompt)
+  const ext = extras || {};
+  if (ext.mentionsMessage) {
+    try {
+      await client.chat.postMessage({
+        channel,
+        thread_ts: headerResult.ts,
+        text: ext.mentionsMessage,
+        unfurl_links: false,
+      });
+    } catch (err) {
+      // Non-fatal — digest was delivered, mentions are optional
+    }
+  }
+
+  // Post feedback prompt as thread reply
   try {
     await client.chat.postMessage({
       channel,
@@ -254,6 +271,7 @@ async function deliverViaBot(botToken, channel, header, content, personaName) {
  * @param {Object} [options] - Optional delivery options
  * @param {string} [options.botToken] - Slack bot token for chat.postMessage delivery
  * @param {string} [options.channel] - Slack channel for bot delivery
+ * @param {string} [options.mentionsMessage] - Pre-formatted @mentions for thread reply
  * @returns {Promise<{ ok: true, persona: string, ts?: string, channel?: string }>}
  */
 async function deliver(webhookUrl, digestContent, personaName, dateRange, options) {
@@ -283,7 +301,9 @@ async function deliver(webhookUrl, digestContent, personaName, dateRange, option
   const opts = options || {};
   if (opts.botToken && opts.channel) {
     try {
-      return await deliverViaBot(opts.botToken, opts.channel, header, mrkdwn, personaName);
+      return await deliverViaBot(opts.botToken, opts.channel, header, mrkdwn, personaName, {
+        mentionsMessage: opts.mentionsMessage,
+      });
     } catch (err) {
       console.error(`Bot delivery failed for ${personaName}, falling back to webhook: ${err.message}`);
     }
@@ -308,6 +328,7 @@ async function deliver(webhookUrl, digestContent, personaName, dateRange, option
  * @param {Object} [options] - Optional delivery options
  * @param {string} [options.botToken] - Slack bot token for chat.postMessage delivery
  * @param {string} [options.channel] - Slack channel for bot delivery
+ * @param {Object} [options.mentionsByPersona] - Map of personaId → formatted mentions message
  * @returns {Promise<Array<{ ok: true, persona: string, ts?: string, channel?: string }>>}
  */
 async function deliverAll(webhookUrl, digestResult, personaIds, options) {
@@ -336,7 +357,12 @@ async function deliverAll(webhookUrl, digestResult, personaIds, options) {
         await new Promise((r) => setTimeout(r, 1000));
       }
 
-      const result = await deliver(webhookUrl, content, persona, digestResult.dateRange, options);
+      const deliverOpts = { ...(options || {}) };
+      // Attach per-persona mentions if available
+      if (deliverOpts.mentionsByPersona && deliverOpts.mentionsByPersona[persona]) {
+        deliverOpts.mentionsMessage = deliverOpts.mentionsByPersona[persona];
+      }
+      const result = await deliver(webhookUrl, content, persona, digestResult.dateRange, deliverOpts);
       results.push(result);
     } catch (err) {
       results.push({ ok: false, persona, error: err.message });

@@ -145,9 +145,73 @@ function filterForPersona(signalContent, journalContent, scores, personaId, thre
   return { signals: filteredSignals, journals: filteredJournals };
 }
 
+/**
+ * Build per-member mention data for a digest persona.
+ * Counts how many items scored 2 (directly relevant) for each member's personas.
+ *
+ * @param {Array<{id: number, [personaId]: number}>} scores - Scoring results
+ * @param {Array<{name: string, slack_user_id?: string, personas?: string[]}>} members - Team members
+ * @param {string} digestPersonaId - The persona this digest is for
+ * @returns {Array<{name: string, slackId: string, count: number}>} Members to mention, sorted by count desc
+ */
+function buildMentions(scores, members, digestPersonaId) {
+  if (!scores || !members || members.length === 0) return [];
+
+  const MENTION_THRESHOLD = 2; // Only mention for directly relevant items
+  const mentions = [];
+
+  for (const member of members) {
+    if (!member.slack_user_id) continue;
+    const memberPersonas = member.personas || [];
+
+    // For unified digest: check all of the member's personas
+    // For persona-specific digest: only mention if member has that persona
+    const relevantPersonas = digestPersonaId === 'unified'
+      ? memberPersonas
+      : memberPersonas.filter(p => p === digestPersonaId);
+
+    if (relevantPersonas.length === 0) continue;
+
+    // Count items that scored >= MENTION_THRESHOLD for any of the member's relevant personas
+    let count = 0;
+    for (const score of scores) {
+      const isRelevant = relevantPersonas.some(p => (score[p] ?? 0) >= MENTION_THRESHOLD);
+      if (isRelevant) count++;
+    }
+
+    if (count > 0) {
+      mentions.push({
+        name: member.name || 'unknown',
+        slackId: member.slack_user_id,
+        count,
+      });
+    }
+  }
+
+  return mentions.sort((a, b) => b.count - a.count);
+}
+
+/**
+ * Format mentions into a Slack mrkdwn message for thread reply.
+ * @param {Array<{name: string, slackId: string, count: number}>} mentions
+ * @returns {string|null} Formatted message or null if no mentions
+ */
+function formatMentionsMessage(mentions) {
+  if (!mentions || mentions.length === 0) return null;
+
+  const lines = mentions.map(m => {
+    const items = m.count === 1 ? '1 item' : `${m.count} items`;
+    return `<@${m.slackId}> — ${items} directly relevant to you`;
+  });
+
+  return `:bell: *Heads up*\n${lines.join('\n')}`;
+}
+
 module.exports = {
   scoreItems,
   filterForPersona,
+  buildMentions,
+  formatMentionsMessage,
   DEFAULT_THRESHOLDS,
   // Exported for testing
   buildScoringPrompt,

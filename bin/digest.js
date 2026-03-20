@@ -805,7 +805,7 @@ async function generateDigest(config, personaIds, sinceDate, onProgress) {
   fs.writeFileSync(combinedFile, combinedContent, 'utf8');
   files.push(combinedFile);
 
-  return { files, personas: personaIds, dateRange };
+  return { files, personas: personaIds, dateRange, scores };
 }
 
 /**

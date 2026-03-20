@@ -854,6 +854,120 @@ else
     _fail "loadPersonas falls back to bundled default" "Got: $RESULT"
 fi
 
+# ── Digest @mentions ──────────────────────────────────────────────────────
+
+echo ""
+echo "Digest @mentions"
+echo "================="
+
+echo ""
+echo "Test: buildMentions returns mentions for members with matching personas"
+RESULT=$(node -e "
+  const intelligence = require('$REPO_ROOT/bin/intelligence.js');
+  const scores = [
+    { id: 0, product: 2, engineering: 1 },
+    { id: 1, product: 0, engineering: 2 },
+    { id: 2, product: 2, engineering: 2 },
+  ];
+  const members = [
+    { name: 'Alice', slack_user_id: 'U111', personas: ['product'] },
+    { name: 'Bob', slack_user_id: 'U222', personas: ['engineering'] },
+  ];
+  const mentions = intelligence.buildMentions(scores, members, 'unified');
+  console.log('ALICE_COUNT:' + mentions.find(m => m.name === 'Alice').count);
+  console.log('BOB_COUNT:' + mentions.find(m => m.name === 'Bob').count);
+")
+if echo "$RESULT" | grep -qF "ALICE_COUNT:2" && echo "$RESULT" | grep -qF "BOB_COUNT:2"; then
+    _pass "buildMentions counts score=2 items"
+else
+    _fail "buildMentions counts score=2 items" "Got: $RESULT"
+fi
+
+echo ""
+echo "Test: buildMentions skips members without slack_user_id"
+RESULT=$(node -e "
+  const intelligence = require('$REPO_ROOT/bin/intelligence.js');
+  const scores = [{ id: 0, engineering: 2 }];
+  const members = [
+    { name: 'NoSlack', personas: ['engineering'] },
+    { name: 'HasSlack', slack_user_id: 'U333', personas: ['engineering'] },
+  ];
+  const mentions = intelligence.buildMentions(scores, members, 'engineering');
+  console.log('COUNT:' + mentions.length);
+  console.log('NAME:' + mentions[0].name);
+")
+if echo "$RESULT" | grep -qF "COUNT:1" && echo "$RESULT" | grep -qF "NAME:HasSlack"; then
+    _pass "buildMentions skips members without slack_user_id"
+else
+    _fail "buildMentions skips members without slack_user_id" "Got: $RESULT"
+fi
+
+echo ""
+echo "Test: buildMentions only mentions members whose persona matches the digest"
+RESULT=$(node -e "
+  const intelligence = require('$REPO_ROOT/bin/intelligence.js');
+  const scores = [{ id: 0, product: 2, engineering: 2 }];
+  const members = [
+    { name: 'PM', slack_user_id: 'U444', personas: ['product'] },
+    { name: 'Eng', slack_user_id: 'U555', personas: ['engineering'] },
+  ];
+  // Product digest — only PM should be mentioned
+  const mentions = intelligence.buildMentions(scores, members, 'product');
+  console.log('COUNT:' + mentions.length);
+  console.log('NAME:' + mentions[0].name);
+")
+if echo "$RESULT" | grep -qF "COUNT:1" && echo "$RESULT" | grep -qF "NAME:PM"; then
+    _pass "buildMentions filters by digest persona"
+else
+    _fail "buildMentions filters by digest persona" "Got: $RESULT"
+fi
+
+echo ""
+echo "Test: buildMentions returns empty for no scores"
+RESULT=$(node -e "
+  const intelligence = require('$REPO_ROOT/bin/intelligence.js');
+  const mentions = intelligence.buildMentions(null, [{ name: 'X', slack_user_id: 'U1', personas: ['engineering'] }], 'engineering');
+  console.log('EMPTY:' + (mentions.length === 0));
+")
+if echo "$RESULT" | grep -qF "EMPTY:true"; then
+    _pass "buildMentions empty for null scores"
+else
+    _fail "buildMentions empty for null scores" "Got: $RESULT"
+fi
+
+echo ""
+echo "Test: formatMentionsMessage produces Slack mrkdwn with user IDs"
+RESULT=$(node -e "
+  const intelligence = require('$REPO_ROOT/bin/intelligence.js');
+  const mentions = [
+    { name: 'Alice', slackId: 'U111', count: 3 },
+    { name: 'Bob', slackId: 'U222', count: 1 },
+  ];
+  const msg = intelligence.formatMentionsMessage(mentions);
+  console.log('HAS_BELL:' + msg.includes(':bell:'));
+  console.log('HAS_ALICE:' + msg.includes('<@U111>'));
+  console.log('HAS_BOB:' + msg.includes('<@U222>'));
+  console.log('HAS_ITEMS:' + msg.includes('3 items'));
+  console.log('HAS_ITEM:' + msg.includes('1 item'));
+")
+if echo "$RESULT" | grep -qF "HAS_BELL:true" && echo "$RESULT" | grep -qF "HAS_ALICE:true" && echo "$RESULT" | grep -qF "HAS_BOB:true" && echo "$RESULT" | grep -qF "HAS_ITEMS:true" && echo "$RESULT" | grep -qF "HAS_ITEM:true"; then
+    _pass "formatMentionsMessage produces correct mrkdwn"
+else
+    _fail "formatMentionsMessage produces correct mrkdwn" "Got: $RESULT"
+fi
+
+echo ""
+echo "Test: formatMentionsMessage returns null for empty mentions"
+RESULT=$(node -e "
+  const intelligence = require('$REPO_ROOT/bin/intelligence.js');
+  console.log('NULL:' + (intelligence.formatMentionsMessage([]) === null));
+")
+if echo "$RESULT" | grep -qF "NULL:true"; then
+    _pass "formatMentionsMessage null for empty"
+else
+    _fail "formatMentionsMessage null for empty" "Got: $RESULT"
+fi
+
 # ── Summary ──────────────────────────────────────────────────────────────────
 
 echo ""

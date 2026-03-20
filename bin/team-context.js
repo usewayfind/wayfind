@@ -4729,6 +4729,21 @@ const COMMANDS = {
   'sync-public': {
     desc: 'Sync code to the public usewayfind/wayfind repo',
     run: () => {
+      // Source must be the repo checkout you're working in, not the npm global install.
+      // Use cwd if it looks like a wayfind repo, otherwise fall back to ROOT.
+      const cwdPkg = path.join(process.cwd(), 'package.json');
+      let sourceRoot = ROOT;
+      if (fs.existsSync(cwdPkg)) {
+        try {
+          const pkg = JSON.parse(fs.readFileSync(cwdPkg, 'utf8'));
+          if (pkg.name === 'wayfind') sourceRoot = process.cwd();
+        } catch {}
+      }
+      if (sourceRoot === ROOT && ROOT !== process.cwd()) {
+        console.log(`Syncing from: ${sourceRoot}`);
+        console.log('Tip: run from your wayfind repo checkout to sync local changes.');
+      }
+
       const tmpDir = path.join(os.tmpdir(), 'wayfind-public-sync');
       const publicRepo = process.env.WAYFIND_PUBLIC_REPO || 'https://github.com/usewayfind/wayfind.git';
 
@@ -4761,13 +4776,13 @@ const COMMANDS = {
       const privateOnlyWorkflows = ['sync-public.yml', 'simulation.yml'];
 
       // Also sync public-staging docs if they exist
-      const publicDocsDir = path.join(ROOT, 'public-staging', 'docs');
+      const publicDocsDir = path.join(sourceRoot, 'public-staging', 'docs');
 
       console.log('Syncing files...');
       for (const item of syncItems) {
         const isDir = item.endsWith('/');
         const name = item.replace(/\/$/, '');
-        const src = path.join(ROOT, name);
+        const src = path.join(sourceRoot, name);
         if (!fs.existsSync(src)) continue;
         if (isDir) {
           // rsync without trailing slash on source copies the directory itself into dest
@@ -4787,7 +4802,7 @@ const COMMANDS = {
 
       // Sync public-staging/ → public repo root (recursive)
       // This overlays LICENSE, README, CHANGELOG, SECURITY, CONTRIBUTING, docs/, etc.
-      const publicStagingDir = path.join(ROOT, 'public-staging');
+      const publicStagingDir = path.join(sourceRoot, 'public-staging');
       if (fs.existsSync(publicStagingDir)) {
         spawnSync('rsync', ['-a', publicStagingDir + '/', tmpDir + '/'], { stdio: 'inherit' });
       }
@@ -4795,7 +4810,7 @@ const COMMANDS = {
       // ── Sanitization gate ───────────────────────────────────────────────
       // Scan all tracked text files for proprietary patterns before pushing.
       // Patterns loaded from .sync-blocklist (not synced to public repo).
-      const blocklistPath = path.join(ROOT, '.sync-blocklist');
+      const blocklistPath = path.join(sourceRoot, '.sync-blocklist');
       const BLOCKED_PATTERNS = [];
       if (fs.existsSync(blocklistPath)) {
         for (const line of fs.readFileSync(blocklistPath, 'utf8').split('\n')) {
@@ -4873,7 +4888,7 @@ const COMMANDS = {
 
       // Get version for commit message
       let version = 'unknown';
-      try { version = require(path.join(ROOT, 'package.json')).version; } catch {}
+      try { version = require(path.join(sourceRoot, 'package.json')).version; } catch {}
 
       // Commit and push
       spawnSync('git', ['add', '-A'], { cwd: tmpDir, stdio: 'inherit' });

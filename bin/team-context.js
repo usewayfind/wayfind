@@ -4508,11 +4508,11 @@ const COMMANDS = {
       const skipNpm = args.includes('--skip-npm');
       if (!skipNpm) {
         console.log('Updating wayfind from npm...');
-        const npmResult = spawnSync('npm', ['update', '-g', 'wayfind'], {
+        const npmResult = spawnSync('npm', ['install', '-g', 'wayfind@latest'], {
           stdio: 'inherit',
         });
         if (npmResult.error || (npmResult.status && npmResult.status !== 0)) {
-          console.error('npm update failed. Try running: npm update -g wayfind');
+          console.error('npm install failed. Try running: npm install -g wayfind@latest');
           console.error('Then re-run: wayfind update --skip-npm');
           process.exit(1);
         }

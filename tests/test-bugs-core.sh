@@ -66,10 +66,10 @@ assert_eq "no .ai-memory references remain after sed" "0" "$REMAINING"
 # Test #2: setup.sh has Python merge logic for settings.json with error handling
 echo ""
 echo "Issue #2: settings.json merge"
-assert_contains "setup.sh has python3 merge" "python3" "$(cat "$SCRIPT_DIR/setup.sh")"
+assert_file_contains_pattern "setup.sh has python3 merge" "python3" "$SCRIPT_DIR/setup.sh"
 assert_file_contains_pattern "setup.sh has setdefault" "setdefault" "$SCRIPT_DIR/setup.sh"
-assert_contains "setup.sh has atomic temp file write" "TMP_SETTINGS" "$(cat "$SCRIPT_DIR/setup.sh")"
-assert_contains "setup.sh has fallback warn on failure" "Could not auto-merge" "$(cat "$SCRIPT_DIR/setup.sh")"
+assert_file_contains_pattern "setup.sh has atomic temp file write" "TMP_SETTINGS" "$SCRIPT_DIR/setup.sh"
+assert_file_contains_pattern "setup.sh has fallback warn on failure" "Could not auto-merge" "$SCRIPT_DIR/setup.sh"
 
 # Summary
 echo ""

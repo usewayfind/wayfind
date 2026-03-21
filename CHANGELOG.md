@@ -2,6 +2,35 @@
 
 All notable changes to Wayfind are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.0.27] - 2026-03-21
+
+### Fixed
+- `WAYFIND_DIR` env var override for container deployments where `HOME` differs from host
+- Docker Compose: mount `connectors.json` into container so all configured signal sources (GitHub, Intercom, Notion) are available to the scheduler
+
+### Changed
+- Strategy digest template rewritten for non-technical audience (CEO/business leader) — no jargon, no issue numbers, no repo names
+
+## [2.0.26] - 2026-03-21
+
+### Added
+- Digest @mentions: threaded reply tags team members by persona relevance when items match their role
+
+## [2.0.23] - 2026-03-18
+
+### Added
+- Persona intelligence layer: single Haiku LLM call scores all signals per persona, filters noise before digest generation
+- Per-persona threshold configuration (engineering=1, product=2, design=2, strategy=1)
+- Translation rules in persona templates
+
+## [2.0.15] - 2026-03-17
+
+### Added
+- Claude Code plugin: 7 skills (`wayfind:` namespace), SessionStart + Stop hooks, marketplace.json
+- `wayfind migrate-to-plugin` command for clean migration from npm-only setup
+- `wayfind update` command: re-syncs hooks/commands from package, detects and updates running containers
+- `wayfind doctor`: stale hook detection with "run wayfind update" guidance
+
 ## [2.0.0] - 2026-03-15
 
 ### Changed

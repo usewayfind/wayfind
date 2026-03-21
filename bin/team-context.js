@@ -14,7 +14,7 @@ if (!HOME) {
   process.exit(1);
 }
 
-const WAYFIND_DIR = path.join(HOME, '.claude', 'team-context');
+const WAYFIND_DIR = process.env.WAYFIND_DIR || path.join(HOME, '.claude', 'team-context');
 
 // --- Env var migration shim (v2.0.0) ---
 // Honor old MERIDIAN_* env vars with deprecation warning. Remove in v3.0.

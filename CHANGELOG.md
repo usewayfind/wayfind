@@ -2,6 +2,12 @@
 
 All notable changes to Wayfind are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.0.28] - 2026-03-21
+
+### Fixed
+- `wayfind version` reported stale version after `wayfind update` — now reads from package.json instead of cached file
+- `wayfind update` passed old version to setup.sh because the running process still had the pre-update code in memory — now resolves the freshly installed package path
+
 ## [2.0.27] - 2026-03-21
 
 ### Fixed

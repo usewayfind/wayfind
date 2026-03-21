@@ -4550,8 +4550,15 @@ const COMMANDS = {
       }
       let newVersion = '';
       try {
-        const pkg = require(path.join(ROOT, 'package.json'));
-        newVersion = pkg.version;
+        // After npm install, ROOT still points to the old code in memory.
+        // Resolve the freshly installed package path from npm global root.
+        const globalRoot = spawnSync('npm', ['root', '-g'], { stdio: 'pipe' });
+        const freshPkgPath = path.join((globalRoot.stdout || '').toString().trim(), 'wayfind', 'package.json');
+        if (fs.existsSync(freshPkgPath)) {
+          newVersion = JSON.parse(fs.readFileSync(freshPkgPath, 'utf8')).version;
+        } else {
+          newVersion = require(path.join(ROOT, 'package.json')).version;
+        }
       } catch (e) {
         // Can't read package.json
       }
@@ -4668,17 +4675,18 @@ const COMMANDS = {
   version: {
     desc: 'Print installed Wayfind version',
     run: () => {
-      const versionFile = path.join(HOME, '.claude', 'team-context', '.wayfind-version');
+      // Primary: read from package.json (always accurate after npm install)
       try {
-        const version = fs.readFileSync(versionFile, 'utf8').trim();
-        console.log(`Wayfind v${version}`);
-      } catch (err) {
-        // Fall back to package.json version if no installed version file
+        const pkg = require(path.join(ROOT, 'package.json'));
+        console.log(`Wayfind v${pkg.version}`);
+      } catch (e) {
+        // Fallback: cached version file (may be stale after update)
+        const versionFile = path.join(HOME, '.claude', 'team-context', '.wayfind-version');
         try {
-          const pkg = require(path.join(ROOT, 'package.json'));
-          console.log(`Wayfind v${pkg.version} (from package.json)`);
-        } catch (e) {
-          console.error('Version unknown (no .wayfind-version file found)');
+          const version = fs.readFileSync(versionFile, 'utf8').trim();
+          console.log(`Wayfind v${version}`);
+        } catch (err) {
+          console.error('Version unknown');
           process.exit(1);
         }
       }

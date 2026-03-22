@@ -2,6 +2,22 @@
 
 All notable changes to Wayfind are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.0.29] - 2026-03-22
+
+### Added
+- Content distillation pipeline: tiered compaction (daily/weekly/archive) deduplicates and merges journal entries via Haiku LLM (#130)
+- `wayfind distill` command with `--tier`, `--dry-run` flags for manual distillation
+- `wayfind digest --preview` prints digest to stdout with input stats for iterative review
+- `wayfind reindex --force` clears content store for full reindex (quality score backfill)
+- Quality-weighted token budget: rich decisions survive truncation, thin auto-extracts dropped first
+- Quality scoring (0-3) computed at index time based on reasoning, alternatives, and content substance
+
+### Fixed
+- GitHub signal summaries now include PR titles, issue titles, and failed CI details — not just counts
+- Signal files indexed into content store with per-repo granularity (was: 0 signal entries, now: per-repo indexing)
+- Signals auto-indexed after every `wayfind pull` (was: only during hourly container cron)
+- Bot search results deduplicated: distilled entries preferred over redundant raw entries
+
 ## [2.0.28] - 2026-03-21
 
 ### Fixed

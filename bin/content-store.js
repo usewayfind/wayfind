@@ -213,6 +213,22 @@ function generateEntryId(date, repo, title) {
 }
 
 /**
+ * Compute a quality score for an entry (0-3).
+ * +1 if has reasoning (explains WHY)
+ * +1 if has alternatives (what was rejected)
+ * +1 if substantive content (>500 chars)
+ * @param {Object} entry - Entry metadata
+ * @returns {number} 0-3
+ */
+function computeQualityScore(entry) {
+  let score = 0;
+  if (entry.hasReasoning) score++;
+  if (entry.hasAlternatives) score++;
+  if ((entry.contentLength || 0) > 500) score++;
+  return score;
+}
+
+/**
  * Build the text content for embedding from an entry's fields.
  * @param {Object} entry - Entry with date, repo, title, fields
  * @returns {string}
@@ -329,7 +345,7 @@ async function indexJournals(options = {}) {
       const content = buildContent({ ...entry, date, author });
       const hash = contentHash(content);
 
-      newEntries[id] = {
+      const entryMeta = {
         date,
         repo: entry.repo,
         title: entry.title,
@@ -339,8 +355,12 @@ async function indexJournals(options = {}) {
         contentLength: content.length,
         tags: extractTags(entry),
         hasEmbedding: false,
+        hasReasoning: false,
+        hasAlternatives: false,
         _content: content, // temporary, not saved to index
       };
+      entryMeta.qualityScore = computeQualityScore(entryMeta);
+      newEntries[id] = entryMeta;
     }
   }
 
@@ -744,39 +764,50 @@ function getEntryContent(entryId, options = {}) {
   // ── Signal entries ──────────────────────────────────────────────────────
   if (entry.source === 'signal') {
     if (!signalsDir) return null;
-    // entry.repo is like 'signals/github' — extract the channel
-    const channel = (entry.repo || '').replace(/^signals\//, '');
-    if (!channel) return null;
+    const repo = entry.repo || '';
 
-    const channelDir = path.join(signalsDir, channel);
-    if (!fs.existsSync(channelDir)) return null;
-
-    // Find a matching file in the channel directory
-    // Try date-based filename first, then scan for any file containing the title
-    const dateCandidates = [
-      path.join(channelDir, `${entry.date}.md`),
-      path.join(channelDir, `${entry.date}-summary.md`),
-    ];
-    for (const filePath of dateCandidates) {
+    // Determine file location based on repo format:
+    // - 'signals/channel' (summary files) → signalsDir/channel/
+    // - 'owner/repo' (per-repo files) → find the channel dir containing owner/repo/
+    let searchDirs = [];
+    if (repo.startsWith('signals/')) {
+      const channel = repo.replace(/^signals\//, '');
+      searchDirs = [path.join(signalsDir, channel)];
+    } else {
+      // Per-repo entry: search all channel dirs for owner/repo subdirectory
       try {
-        return fs.readFileSync(filePath, 'utf8');
-      } catch {
-        // Try next candidate
-      }
+        const channels = fs.readdirSync(signalsDir, { withFileTypes: true })
+          .filter(d => d.isDirectory()).map(d => d.name);
+        for (const ch of channels) {
+          const repoDir = path.join(signalsDir, ch, repo);
+          if (fs.existsSync(repoDir)) {
+            searchDirs.push(repoDir);
+          }
+        }
+      } catch { /* skip */ }
     }
 
-    // Scan channel dir for files matching the date
-    try {
-      const files = fs.readdirSync(channelDir).filter(f => f.endsWith('.md') && f.includes(entry.date));
-      for (const file of files) {
+    for (const dir of searchDirs) {
+      if (!fs.existsSync(dir)) continue;
+      // Try date-based filename first, then summary, then scan
+      const dateCandidates = [
+        path.join(dir, `${entry.date}.md`),
+        path.join(dir, `${entry.date}-summary.md`),
+      ];
+      for (const filePath of dateCandidates) {
         try {
-          return fs.readFileSync(path.join(channelDir, file), 'utf8');
-        } catch {
-          continue;
-        }
+          return fs.readFileSync(filePath, 'utf8');
+        } catch { /* try next */ }
       }
-    } catch {
-      // Channel dir not readable
+      // Scan for files matching the date
+      try {
+        const files = fs.readdirSync(dir).filter(f => f.endsWith('.md') && f.includes(entry.date));
+        for (const file of files) {
+          try {
+            return fs.readFileSync(path.join(dir, file), 'utf8');
+          } catch { continue; }
+        }
+      } catch { /* dir not readable */ }
     }
 
     return null;
@@ -1346,7 +1377,7 @@ async function indexConversations(options = {}) {
 
       const hash = contentHash(content);
 
-      existingIndex.entries[id] = {
+      const convEntry = {
         date,
         repo: transcript.repo,
         title: decision.title,
@@ -1361,6 +1392,8 @@ async function indexConversations(options = {}) {
         hasAlternatives: !!decision.has_alternatives,
         _content: content,
       };
+      convEntry.qualityScore = computeQualityScore(convEntry);
+      existingIndex.entries[id] = convEntry;
 
       if (doEmbeddings) {
         try {
@@ -1653,16 +1686,42 @@ async function indexSignals(options = {}) {
 
   for (const channel of channels) {
     const channelDir = path.join(signalsDir, channel);
-    let files;
+
+    // Collect all .md files: channel root + recursive owner/repo subdirectories
+    const signalFiles = [];
     try {
-      files = fs.readdirSync(channelDir).filter(f => f.endsWith('.md')).sort();
+      const entries = fs.readdirSync(channelDir, { withFileTypes: true });
+      // Channel-root .md files (summaries like YYYY-MM-DD-summary.md)
+      for (const e of entries) {
+        if (e.isFile() && e.name.endsWith('.md')) {
+          signalFiles.push({ filePath: path.join(channelDir, e.name), file: e.name, repo: 'signals/' + channel });
+        }
+      }
+      // Walk owner/repo subdirectories (e.g., github/acme-corp/web-api/)
+      for (const ownerEntry of entries) {
+        if (!ownerEntry.isDirectory()) continue;
+        const ownerDir = path.join(channelDir, ownerEntry.name);
+        let repoEntries;
+        try { repoEntries = fs.readdirSync(ownerDir, { withFileTypes: true }); } catch { continue; }
+        for (const repoEntry of repoEntries) {
+          if (!repoEntry.isDirectory()) continue;
+          const repoDir = path.join(ownerDir, repoEntry.name);
+          const repoStr = `${ownerEntry.name}/${repoEntry.name}`;
+          let repoFiles;
+          try { repoFiles = fs.readdirSync(repoDir).filter(f => f.endsWith('.md')); } catch { continue; }
+          for (const f of repoFiles) {
+            signalFiles.push({ filePath: path.join(repoDir, f), file: f, repo: repoStr });
+          }
+        }
+      }
     } catch {
       continue;
     }
 
-    for (const file of files) {
+    signalFiles.sort((a, b) => a.file.localeCompare(b.file));
+
+    for (const { filePath, file, repo } of signalFiles) {
       stats.fileCount++;
-      const filePath = path.join(channelDir, file);
       let content;
       try {
         content = fs.readFileSync(filePath, 'utf8');
@@ -1670,16 +1729,17 @@ async function indexSignals(options = {}) {
         continue;
       }
 
-      // Extract date from filename (YYYY-MM-DD.md) or fall back to filename
-      const dateMatch = file.match(/^(\d{4}-\d{2}-\d{2})\.md$/);
+      // Extract date from filename (YYYY-MM-DD.md or YYYY-MM-DD-summary.md) or fall back to filename
+      const dateMatch = file.match(/^(\d{4}-\d{2}-\d{2})/);
       const date = dateMatch ? dateMatch[1] : file.replace(/\.md$/, '');
 
       // Extract title from first # heading, or fall back to filename
       const titleMatch = content.match(/^#\s+(.+)$/m);
       const title = titleMatch ? titleMatch[1].trim() : file.replace(/\.md$/, '');
 
-      // Extract tags: channel name + any ## section headings
+      // Extract tags: channel name + repo + any ## section headings
       const tags = [channel];
+      if (repo !== 'signals/' + channel) tags.push(repo);
       const sectionRe = /^##\s+(.+)$/gm;
       let sectionMatch;
       while ((sectionMatch = sectionRe.exec(content)) !== null) {
@@ -1689,7 +1749,6 @@ async function indexSignals(options = {}) {
         }
       }
 
-      const repo = 'signals/' + channel;
       const id = generateEntryId(date, repo, file.replace(/\.md$/, ''));
       const hash = contentHash(content);
 
@@ -1975,6 +2034,32 @@ function computeQualityProfile(options = {}) {
 
 // ── Exports ─────────────────────────────────────────────────────────────────
 
+/**
+ * Deduplicate search results by removing raw entries that have been absorbed
+ * into distilled entries. If a distilled entry exists in the results, its
+ * source entries (listed in distilledFrom) are removed.
+ * @param {Array<{id: string, entry: Object, score?: number}>} results
+ * @returns {Array} Deduplicated results
+ */
+function deduplicateResults(results) {
+  if (!results || results.length === 0) return results;
+
+  // Collect all IDs that have been absorbed into distilled entries
+  const absorbedIds = new Set();
+  for (const r of results) {
+    if (r.entry && r.entry.distilledFrom && Array.isArray(r.entry.distilledFrom)) {
+      for (const id of r.entry.distilledFrom) {
+        absorbedIds.add(id);
+      }
+    }
+  }
+
+  if (absorbedIds.size === 0) return results;
+
+  // Filter out absorbed entries
+  return results.filter(r => !absorbedIds.has(r.id));
+}
+
 module.exports = {
   // Parsing
   parseJournalFile,
@@ -2004,6 +2089,10 @@ module.exports = {
   // Filtering
   isRepoExcluded,
   applyFilters,
+
+  // Quality & dedup
+  computeQualityScore,
+  deduplicateResults,
 
   // Core operations
   indexJournals,

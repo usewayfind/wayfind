@@ -269,13 +269,18 @@ function collectFromStore(sinceDate, options = {}) {
   });
 
   if (entries.length === 0) {
-    return { journals: '', signals: '', entryCount: 0 };
+    return { journals: '', signals: '', entryCount: 0, entryMeta: [] };
   }
 
   const journalParts = [];
   const signalParts = [];
+  const journalMeta = [];
+  const signalMeta = [];
 
   for (const { id, entry } of entries) {
+    // Skip raw entries that have been absorbed into a distilled entry
+    if (entry.distilledFrom) continue;
+
     const content = contentStore.getEntryContent(id, { storePath, journalDir, signalsDir });
     if (!content) continue;
 
@@ -287,10 +292,21 @@ function collectFromStore(sinceDate, options = {}) {
     const meta = author ? `${header}\n${author}\n` : `${header}\n`;
     const formatted = `${meta}\n${content}`;
 
+    const itemMeta = {
+      date: entry.date,
+      source: entry.source,
+      qualityScore: entry.qualityScore || 0,
+      hasReasoning: entry.hasReasoning,
+      hasAlternatives: entry.hasAlternatives,
+      distillTier: entry.distillTier || 'raw',
+    };
+
     if (source === 'signal') {
       signalParts.push(formatted);
+      signalMeta.push(itemMeta);
     } else {
       journalParts.push(formatted);
+      journalMeta.push(itemMeta);
     }
   }
 
@@ -298,6 +314,7 @@ function collectFromStore(sinceDate, options = {}) {
     journals: journalParts.join('\n\n---\n\n'),
     signals: signalParts.join('\n\n---\n\n'),
     entryCount: entries.length,
+    entryMeta: { journal: journalMeta, signal: signalMeta },
   };
 }
 
@@ -618,56 +635,102 @@ function buildPrompt(personaId, signalContent, journalContent, dateRange, contex
 }
 
 /**
- * Apply token budget constraints to signal and journal content.
- * Truncates oldest journal entries first, then signal content.
+ * Apply token budget constraints with quality-weighted packing.
+ * Higher quality entries are kept preferentially over low-quality ones.
  * @param {string} signalContent
  * @param {string} journalContent
  * @param {number} maxChars
- * @returns {{ signals: string, journals: string, truncated: boolean }}
+ * @param {Object} [options] - Optional metadata for quality-weighted packing
+ * @param {Object} [options.entryMeta] - { journal: [{qualityScore, date, ...}], signal: [...] }
+ * @param {Array} [options.scores] - Intelligence scores from Haiku scoring
+ * @param {string} [options.personaId] - Current persona for score lookup
+ * @returns {{ signals: string, journals: string, truncated: boolean, stats: Object }}
  */
-function applyTokenBudget(signalContent, journalContent, maxChars) {
+function applyTokenBudget(signalContent, journalContent, maxChars, options = {}) {
   const total = signalContent.length + journalContent.length;
   if (total <= maxChars) {
-    return { signals: signalContent, journals: journalContent, truncated: false };
+    return { signals: signalContent, journals: journalContent, truncated: false, stats: { dropped: 0 } };
   }
 
-  const truncationNote = '\n\n> Note: Input was truncated to fit within token budget. Some older entries may be omitted.\n';
-  const noteLen = truncationNote.length;
-  const available = maxChars - noteLen;
+  const { entryMeta, scores, personaId } = options;
 
-  let trimmedJournals = journalContent;
-  let trimmedSignals = signalContent;
-  let journalsTrimmed = false;
-  let signalsTrimmed = false;
+  // Split into sections
+  const signalSections = signalContent ? signalContent.split('\n\n---\n\n') : [];
+  const journalSections = journalContent ? journalContent.split('\n\n---\n\n') : [];
+  const signalMetaArr = (entryMeta && entryMeta.signal) || [];
+  const journalMetaArr = (entryMeta && entryMeta.journal) || [];
 
-  // Strategy: drop oldest journal entries first, then trim signals
-  if (trimmedSignals.length + trimmedJournals.length > available) {
-    // Try trimming journals first (keep newest entries)
-    const journalBudget = Math.max(0, available - trimmedSignals.length);
-    if (journalBudget < trimmedJournals.length) {
-      trimmedJournals = trimmedJournals.slice(trimmedJournals.length - journalBudget);
-      journalsTrimmed = true;
+  // Score each section with composite priority
+  const todayStr = today();
+  const yesterdayStr = (() => { const d = new Date(); d.setDate(d.getDate() - 1); return d.toISOString().split('T')[0]; })();
+
+  const allSections = [];
+  for (let i = 0; i < signalSections.length; i++) {
+    const meta = signalMetaArr[i] || {};
+    const quality = meta.qualityScore || 0;
+    const recency = (meta.date === todayStr || meta.date === yesterdayStr) ? 1 : 0;
+    const intel = (scores && scores[i] && personaId) ? (scores[i][personaId] || 0) : 0;
+    const distillBonus = (meta.distillTier && meta.distillTier !== 'raw') ? 1 : 0;
+    allSections.push({
+      text: signalSections[i],
+      type: 'signal',
+      priority: quality + recency + intel + distillBonus,
+      len: signalSections[i].length,
+    });
+  }
+  for (let i = 0; i < journalSections.length; i++) {
+    const meta = journalMetaArr[i] || {};
+    const quality = meta.qualityScore || 0;
+    const recency = (meta.date === todayStr || meta.date === yesterdayStr) ? 1 : 0;
+    // Journal score indices start after signal count
+    const scoreIdx = signalSections.length + i;
+    const intel = (scores && scores[scoreIdx] && personaId) ? (scores[scoreIdx][personaId] || 0) : 0;
+    const distillBonus = (meta.distillTier && meta.distillTier !== 'raw') ? 1 : 0;
+    allSections.push({
+      text: journalSections[i],
+      type: 'journal',
+      priority: quality + recency + intel + distillBonus,
+      len: journalSections[i].length,
+    });
+  }
+
+  // Sort by priority descending (highest quality first)
+  allSections.sort((a, b) => b.priority - a.priority);
+
+  // Greedily pack into budget
+  const truncationNote = '\n\n> Note: Input was truncated to fit within token budget. Lower-quality entries were dropped.\n';
+  const available = maxChars - truncationNote.length;
+  const keptSignals = [];
+  const keptJournals = [];
+  let used = 0;
+  let dropped = 0;
+
+  for (const section of allSections) {
+    const sectionCost = section.len + 7; // account for '\n\n---\n\n' separator
+    if (used + sectionCost <= available) {
+      if (section.type === 'signal') {
+        keptSignals.push(section.text);
+      } else {
+        keptJournals.push(section.text);
+      }
+      used += sectionCost;
+    } else {
+      dropped++;
     }
   }
 
-  if (trimmedSignals.length + trimmedJournals.length > available) {
-    // Still over — trim signal content from the end
-    const signalBudget = Math.max(0, available - trimmedJournals.length);
-    trimmedSignals = trimmedSignals.slice(0, signalBudget);
-    signalsTrimmed = true;
-  }
-
-  // Append truncation note to whichever content was actually trimmed
-  if (signalsTrimmed) {
-    trimmedSignals += truncationNote;
-  } else if (journalsTrimmed) {
-    trimmedJournals += truncationNote;
+  const truncated = dropped > 0;
+  let finalSignals = keptSignals.join('\n\n---\n\n');
+  let finalJournals = keptJournals.join('\n\n---\n\n');
+  if (truncated) {
+    finalJournals += truncationNote;
   }
 
   return {
-    signals: trimmedSignals,
-    journals: trimmedJournals,
-    truncated: true,
+    signals: finalSignals,
+    journals: finalJournals,
+    truncated,
+    stats: { dropped, total: allSections.length, kept: allSections.length - dropped },
   };
 }
 
@@ -748,7 +811,11 @@ async function generateDigest(config, personaIds, sinceDate, onProgress) {
       ({ signals: pSignals, journals: pJournals } =
         intelligence.filterForPersona(signalContent, journalContent, scores, personaId, threshold, allPersonaIds));
     }
-    const budget = applyTokenBudget(pSignals, pJournals, maxInputChars);
+    const budget = applyTokenBudget(pSignals, pJournals, maxInputChars, {
+      entryMeta: storeResult.entryMeta,
+      scores,
+      personaId,
+    });
     pSignals = budget.signals;
     pJournals = budget.journals;
 
@@ -805,7 +872,21 @@ async function generateDigest(config, personaIds, sinceDate, onProgress) {
   fs.writeFileSync(combinedFile, combinedContent, 'utf8');
   files.push(combinedFile);
 
-  return { files, personas: personaIds, dateRange, scores };
+  // Compute input stats for preview mode
+  const entryMeta = storeResult.entryMeta || {};
+  const journalMeta = entryMeta.journal || [];
+  const signalMeta = entryMeta.signal || [];
+  const inputStats = {
+    journalEntries: journalMeta.length,
+    signalEntries: signalMeta.length,
+    qualityDistribution: {
+      rich: journalMeta.filter(m => m.qualityScore >= 2).length,
+      medium: journalMeta.filter(m => m.qualityScore === 1).length,
+      thin: journalMeta.filter(m => m.qualityScore === 0).length,
+    },
+  };
+
+  return { files, personas: personaIds, dateRange, scores, inputStats };
 }
 
 /**

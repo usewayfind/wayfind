@@ -639,7 +639,8 @@ async function searchDecisionTrail(query, config) {
     }
   }
 
-  return results || [];
+  // Deduplicate: prefer distilled entries over their raw sources
+  return contentStore.deduplicateResults(results || []);
 }
 
 /**

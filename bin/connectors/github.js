@@ -303,7 +303,28 @@ async function pull(config, since) {
       highlights.push(`${failedCount} CI failure(s)`);
     }
 
-    repoHighlights.push({ repo: repoStr, openPRs, mergedPRs, highlights });
+    repoHighlights.push({
+      repo: repoStr,
+      openPRs,
+      mergedPRs,
+      highlights,
+      topPRs: data.prs.slice(0, 5).map((pr) => ({
+        number: pr.number,
+        title: pr.title,
+        author: pr.user?.login || pr.user?.name || 'unknown',
+        state: pr.merged_at ? 'merged' : pr.state,
+      })),
+      topIssues: data.issues.slice(0, 5).map((iss) => ({
+        number: iss.number,
+        title: iss.title,
+        labels: (iss.labels || []).map((l) => (typeof l === 'string' ? l : l.name)).filter(Boolean),
+        state: iss.state,
+      })),
+      failedRuns: failed.map((r) => ({
+        name: r.name || r.workflow?.name || 'unknown',
+        branch: r.head_branch || '',
+      })),
+    });
   }
 
   // Generate rollup summary
@@ -488,6 +509,21 @@ function generateSummaryMarkdown(
     lines.push(`### ${rh.repo}`);
     for (const h of rh.highlights) {
       lines.push(`- ${h}`);
+    }
+    if (rh.topPRs && rh.topPRs.length > 0) {
+      const prItems = rh.topPRs.map((pr) => `#${pr.number} "${pr.title}" (${pr.author}, ${pr.state})`);
+      lines.push(`**PRs:** ${prItems.join(' | ')}`);
+    }
+    if (rh.topIssues && rh.topIssues.length > 0) {
+      const issueItems = rh.topIssues.map((iss) => {
+        const labels = iss.labels && iss.labels.length > 0 ? ` [${iss.labels.join(', ')}]` : '';
+        return `#${iss.number} "${iss.title}"${labels} (${iss.state})`;
+      });
+      lines.push(`**Issues:** ${issueItems.join(' | ')}`);
+    }
+    if (rh.failedRuns && rh.failedRuns.length > 0) {
+      const runItems = rh.failedRuns.map((r) => `${r.name}${r.branch ? ' (' + r.branch + ')' : ''}`);
+      lines.push(`**Failed CI:** ${runItems.join(' | ')}`);
     }
     lines.push('');
   }

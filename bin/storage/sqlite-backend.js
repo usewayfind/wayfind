@@ -40,6 +40,10 @@ CREATE TABLE IF NOT EXISTS decisions (
   has_embedding INTEGER DEFAULT 0,
   has_reasoning INTEGER DEFAULT 0,
   has_alternatives INTEGER DEFAULT 0,
+  quality_score INTEGER DEFAULT 0,
+  distill_tier TEXT DEFAULT 'raw',
+  distilled_from TEXT DEFAULT NULL,
+  distilled_at INTEGER DEFAULT NULL,
   created_at INTEGER,
   updated_at INTEGER
 );
@@ -48,6 +52,19 @@ CREATE INDEX IF NOT EXISTS idx_decisions_date ON decisions(date);
 CREATE INDEX IF NOT EXISTS idx_decisions_repo ON decisions(repo);
 CREATE INDEX IF NOT EXISTS idx_decisions_source ON decisions(source);
 CREATE INDEX IF NOT EXISTS idx_decisions_user ON decisions(user);
+CREATE INDEX IF NOT EXISTS idx_decisions_quality ON decisions(quality_score);
+CREATE INDEX IF NOT EXISTS idx_decisions_tier ON decisions(distill_tier);
+
+CREATE TABLE IF NOT EXISTS distillation_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  run_at INTEGER NOT NULL,
+  tier TEXT NOT NULL,
+  entries_input INTEGER DEFAULT 0,
+  entries_output INTEGER DEFAULT 0,
+  entries_merged INTEGER DEFAULT 0,
+  entries_deduped INTEGER DEFAULT 0,
+  llm_calls INTEGER DEFAULT 0
+);
 
 CREATE TABLE IF NOT EXISTS embeddings (
   id TEXT PRIMARY KEY,
@@ -90,6 +107,10 @@ function entryToRow(id, entry) {
     has_embedding: entry.hasEmbedding ? 1 : 0,
     has_reasoning: entry.hasReasoning ? 1 : 0,
     has_alternatives: entry.hasAlternatives ? 1 : 0,
+    quality_score: entry.qualityScore || 0,
+    distill_tier: entry.distillTier || 'raw',
+    distilled_from: entry.distilledFrom ? JSON.stringify(entry.distilledFrom) : null,
+    distilled_at: entry.distilledAt || null,
     created_at: entry.createdAt || Date.now(),
     updated_at: Date.now(),
   };
@@ -109,6 +130,10 @@ function rowToEntry(row) {
     hasEmbedding: !!row.has_embedding,
     hasReasoning: !!row.has_reasoning,
     hasAlternatives: !!row.has_alternatives,
+    qualityScore: row.quality_score || 0,
+    distillTier: row.distill_tier || 'raw',
+    distilledFrom: row.distilled_from ? JSON.parse(row.distilled_from) : null,
+    distilledAt: row.distilled_at || null,
   };
 }
 
@@ -136,6 +161,21 @@ class SqliteBackend {
     const existing = this.db.prepare('SELECT value FROM metadata WHERE key = ?').get('schema_version');
     if (!existing) {
       this.db.prepare('INSERT INTO metadata (key, value) VALUES (?, ?)').run('schema_version', SCHEMA_VERSION);
+    }
+
+    // Migrate existing databases: add new columns if they don't exist
+    const cols = this.db.prepare('PRAGMA table_info(decisions)').all().map(c => c.name);
+    if (!cols.includes('quality_score')) {
+      this.db.exec('ALTER TABLE decisions ADD COLUMN quality_score INTEGER DEFAULT 0');
+    }
+    if (!cols.includes('distill_tier')) {
+      this.db.exec('ALTER TABLE decisions ADD COLUMN distill_tier TEXT DEFAULT \'raw\'');
+    }
+    if (!cols.includes('distilled_from')) {
+      this.db.exec('ALTER TABLE decisions ADD COLUMN distilled_from TEXT DEFAULT NULL');
+    }
+    if (!cols.includes('distilled_at')) {
+      this.db.exec('ALTER TABLE decisions ADD COLUMN distilled_at INTEGER DEFAULT NULL');
     }
   }
 
@@ -173,10 +213,12 @@ class SqliteBackend {
       const stmt = this.db.prepare(`
         INSERT INTO decisions (id, date, repo, title, source, user, drifted,
           content_hash, content_length, tags, has_embedding, has_reasoning,
-          has_alternatives, created_at, updated_at)
+          has_alternatives, quality_score, distill_tier, distilled_from, distilled_at,
+          created_at, updated_at)
         VALUES (@id, @date, @repo, @title, @source, @user, @drifted,
           @content_hash, @content_length, @tags, @has_embedding, @has_reasoning,
-          @has_alternatives, @created_at, @updated_at)
+          @has_alternatives, @quality_score, @distill_tier, @distilled_from, @distilled_at,
+          @created_at, @updated_at)
       `);
       for (const [id, entry] of Object.entries(entries)) {
         stmt.run(entryToRow(id, entry));

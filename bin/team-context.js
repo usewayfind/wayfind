@@ -718,6 +718,14 @@ async function runPull(args) {
       writeConnectorsConfig(freshConfig);
       printPullResult(name, result);
     }
+    // Auto-index signals into content store after pull
+    try {
+      console.log('\nIndexing signals...');
+      const signalStats = await contentStore.indexSignals({ embeddings: false });
+      console.log(`  ${signalStats.newEntries} new, ${signalStats.updatedEntries} updated, ${signalStats.skippedEntries} unchanged`);
+    } catch (err) {
+      console.log(`  Signal indexing skipped: ${err.message}`);
+    }
     return;
   }
 
@@ -827,6 +835,14 @@ async function runPull(args) {
   writeConnectorsConfig(freshConfig);
 
   printPullResult(channel, result);
+
+  // Auto-index signals into content store after pull
+  try {
+    const signalStats = await contentStore.indexSignals({ embeddings: false });
+    console.log(`\nSignals indexed: ${signalStats.newEntries} new, ${signalStats.updatedEntries} updated`);
+  } catch (err) {
+    console.log(`Signal indexing skipped: ${err.message}`);
+  }
 }
 
 function runSignals() {
@@ -928,6 +944,7 @@ async function runDigest(args) {
   const personaIdx = args.indexOf('--persona');
   const sinceIdx = args.indexOf('--since');
   const deliver = args.includes('--deliver');
+  const preview = args.includes('--preview');
 
   // Determine personas
   let personaIds;
@@ -981,6 +998,32 @@ async function runDigest(args) {
   });
 
   console.log('');
+
+  if (preview) {
+    // Preview mode: print digest content and stats to stdout
+    console.log('=== DIGEST PREVIEW ===');
+    console.log('');
+    if (result.inputStats) {
+      const s = result.inputStats;
+      console.log(`Input: ${s.journalEntries || 0} journal, ${s.signalEntries || 0} signal entries`);
+      if (s.budgetStats) {
+        console.log(`Budget: ${s.budgetStats.kept || 0} kept, ${s.budgetStats.dropped || 0} dropped`);
+      }
+      console.log('');
+    }
+    for (const f of result.files) {
+      try {
+        const content = fs.readFileSync(f, 'utf8');
+        const personaId = path.basename(path.dirname(f)) || 'combined';
+        console.log(`--- ${personaId} ---`);
+        console.log(content);
+        console.log('');
+      } catch { /* skip unreadable */ }
+    }
+    console.log('=== END PREVIEW ===');
+    return;
+  }
+
   console.log('Digests generated:');
   for (const f of result.files) {
     console.log(`  ${f}`);
@@ -1172,6 +1215,20 @@ async function runReindex(args) {
   const signalsOnly = args.includes('--signals-only');
   const doExport = args.includes('--export');
   const detectShifts = args.includes('--detect-shifts');
+  const force = args.includes('--force');
+
+  if (force) {
+    console.log('Force mode: clearing content store for full reindex...');
+    try {
+      const backend = contentStore.getBackend();
+      const emptyIndex = { version: contentStore.INDEX_VERSION, entries: {}, lastUpdated: Date.now(), entryCount: 0 };
+      backend.saveIndex(emptyIndex);
+      // Clear conversation fingerprint cache so all transcripts are re-extracted
+      backend.saveConversationIndex({});
+    } catch (err) {
+      console.log(`  Warning: could not clear store: ${err.message}`);
+    }
+  }
 
   if (!conversationsOnly && !signalsOnly) {
     console.log('=== Journals ===');
@@ -1192,6 +1249,44 @@ async function runReindex(args) {
     console.log('=== Signals ===');
     await indexSignalsIfAvailable();
   }
+
+  // Optional: run distillation after reindex
+  if (args.includes('--distill')) {
+    console.log('');
+    console.log('=== Distillation ===');
+    await runDistill(['--tier', 'daily']);
+  }
+}
+
+async function runDistill(args) {
+  const distill = require('./distill');
+  const dryRun = args.includes('--dry-run');
+  const tierIdx = args.indexOf('--tier');
+  const tier = (tierIdx !== -1 && args[tierIdx + 1]) ? args[tierIdx + 1] : 'daily';
+
+  console.log(`Distilling content (tier: ${tier}${dryRun ? ', dry run' : ''})...`);
+
+  // Build LLM config from connectors
+  let llmConfig = null;
+  if (!dryRun) {
+    const config = readConnectorsConfig();
+    if (config.digest && config.digest.llm) {
+      llmConfig = {
+        provider: config.digest.llm.provider,
+        model: config.digest.llm.intelligence?.model || 'claude-haiku-4-5-20251001',
+        api_key_env: config.digest.llm.api_key_env,
+      };
+    }
+  }
+
+  const stats = await distill.distillEntries({ tier, dryRun, llmConfig });
+
+  console.log('');
+  console.log('Distillation results:');
+  console.log(`  Groups: ${stats.grouped}`);
+  console.log(`  Deduped: ${stats.deduped}`);
+  console.log(`  Merged: ${stats.merged}`);
+  console.log(`  LLM calls: ${stats.llmCalls}`);
 }
 
 /**
@@ -4735,6 +4830,10 @@ const COMMANDS = {
   reindex: {
     desc: 'Index all signal sources (journals + conversations)',
     run: (args) => runReindex(args),
+  },
+  distill: {
+    desc: 'Distill content store: dedup, merge, and compact entries',
+    run: (args) => runDistill(args),
   },
   'index-journals': {
     desc: 'Index journal entries into the content store',

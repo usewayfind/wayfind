@@ -164,14 +164,13 @@ async function mergeEntries(entries, llmConfig, tier) {
   const systemPrompt = MERGE_PROMPTS[tier] || MERGE_PROMPTS.daily;
   const userContent = parts.join('\n\n---\n\n');
 
-  const result = await llm.chat({
+  const config = {
     provider: llmConfig.provider || 'anthropic',
     model: llmConfig.model || 'claude-haiku-4-5-20251001',
-    apiKeyEnv: llmConfig.api_key_env || 'ANTHROPIC_API_KEY',
-    system: systemPrompt,
-    messages: [{ role: 'user', content: userContent }],
+    api_key_env: llmConfig.api_key_env || 'ANTHROPIC_API_KEY',
     max_tokens: 2000,
-  });
+  };
+  const result = await llm.call(config, systemPrompt, userContent);
 
   // Extract title from first line or generate one
   const firstEntry = entries[0].entry;

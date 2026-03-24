@@ -11,7 +11,7 @@ set -euo pipefail
 # Skip export for worker agents in multi-agent swarms.
 # Set TEAM_CONTEXT_SKIP_EXPORT=1 when spawning worker agents so only the
 # orchestrator's decisions flow into the journal.
-if [ "${TEAM_CONTEXT_SKIP_EXPORT:-${MERIDIAN_SKIP_EXPORT:-}}" = "1" ]; then
+if [ "${TEAM_CONTEXT_SKIP_EXPORT:-}" = "1" ]; then
   exit 0
 fi
 

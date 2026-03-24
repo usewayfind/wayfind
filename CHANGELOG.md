@@ -2,6 +2,12 @@
 
 All notable changes to Wayfind are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.0.30] - 2026-03-24
+
+### Added
+- `init-folder` command: initialize Wayfind for non-repo folders (~/admin, ~/, scratch workspaces) so context persists across sessions even outside git repos (#138)
+- `init-team` now prompts to set up non-repo admin folders during onboarding
+
 ## [2.0.29] - 2026-03-22
 
 ### Added

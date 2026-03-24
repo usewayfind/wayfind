@@ -3,15 +3,17 @@
 
 **Memory system:** Hierarchical plain-markdown files. No CLI tools, no databases.
 
+**Important:** Claude Code has its own auto-memory system that writes to `~/.claude/projects/<project>/memory/MEMORY.md`. Wayfind's memory files live in a separate `wayfind/` subfolder to avoid conflicts. Do NOT write Wayfind state files to the root memory directory — that's Claude Code's native auto-memory space.
+
 ### File Hierarchy
 
 ```
 ~/.claude/
   global-state.md          # Thin index — ALWAYS load at session start
   state.md                 # Admin/non-repo work
-  memory/                  # Topic files — load on demand
+  memory/                  # Cross-repo topic files — load on demand
     <topic>.md
-    journal/YYYY-MM-DD.md  # Daily log
+    journal/YYYY-MM-DD.md  # Daily work log
 
 <repo>/.claude/
   team-state.md            # Shared team context — committed to git
@@ -47,7 +49,9 @@ If work drifts from the stated goal, flag it: *"Quick check — we set out to [g
 
 ### Rules
 
+- **NEVER write secrets, API keys, tokens, passwords, or credentials into memory or state files.** Store a pointer to where the secret lives (e.g., "API key is in `~/.config/myapp/.env`"), not the secret itself. Memory files are plain text, may be synced to git, and are readable by any tool with filesystem access.
 - Keep `global-state.md` under 80 lines. Detail goes in `~/.claude/memory/` files.
 - Per-repo `state.md` stays focused on that repo only.
 - New cross-repo topics get new files in `~/.claude/memory/`, not appended to global-state.md.
+- Do NOT write Wayfind files to `~/.claude/projects/<project>/memory/` root — that's Claude Code's native auto-memory space.
 - Do NOT use external memory databases or CLI tools for state storage. Use plain markdown files only.

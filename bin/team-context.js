@@ -16,44 +16,7 @@ if (!HOME) {
 
 const WAYFIND_DIR = process.env.WAYFIND_DIR || path.join(HOME, '.claude', 'team-context');
 
-// --- Env var migration shim (v2.0.0) ---
-// Honor old MERIDIAN_* env vars with deprecation warning. Remove in v3.0.
-const ENV_VAR_MIGRATION = {
-  MERIDIAN_TELEMETRY: 'TEAM_CONTEXT_TELEMETRY',
-  MERIDIAN_AUTHOR: 'TEAM_CONTEXT_AUTHOR',
-  MERIDIAN_TENANT_ID: 'TEAM_CONTEXT_TENANT_ID',
-  MERIDIAN_TEAM_CONTEXT_DIR: 'TEAM_CONTEXT_DIR',
-  MERIDIAN_JOURNALS_DIR: 'TEAM_CONTEXT_JOURNALS_DIR',
-  MERIDIAN_SIGNALS_DIR: 'TEAM_CONTEXT_SIGNALS_DIR',
-  MERIDIAN_SKIP_EXPORT: 'TEAM_CONTEXT_SKIP_EXPORT',
-  MERIDIAN_EXCLUDE_REPOS: 'TEAM_CONTEXT_EXCLUDE_REPOS',
-  MERIDIAN_SLACK_WEBHOOK: 'TEAM_CONTEXT_SLACK_WEBHOOK',
-  MERIDIAN_LLM_MODEL: 'TEAM_CONTEXT_LLM_MODEL',
-  MERIDIAN_DIGEST_SCHEDULE: 'TEAM_CONTEXT_DIGEST_SCHEDULE',
-  MERIDIAN_SIGNAL_SCHEDULE: 'TEAM_CONTEXT_SIGNAL_SCHEDULE',
-  MERIDIAN_STORAGE_BACKEND: 'TEAM_CONTEXT_STORAGE_BACKEND',
-  MERIDIAN_MODE: 'TEAM_CONTEXT_MODE',
-  MERIDIAN_REINDEX_SCHEDULE: 'TEAM_CONTEXT_REINDEX_SCHEDULE',
-  MERIDIAN_ENCRYPTION_KEY: 'TEAM_CONTEXT_ENCRYPTION_KEY',
-  MERIDIAN_SIMULATE: 'TEAM_CONTEXT_SIMULATE',
-  MERIDIAN_SIM_FIXTURES: 'TEAM_CONTEXT_SIM_FIXTURES',
-  MERIDIAN_VERSION: 'TEAM_CONTEXT_VERSION',
-};
-for (const [oldKey, newKey] of Object.entries(ENV_VAR_MIGRATION)) {
-  if (process.env[oldKey] && !process.env[newKey]) {
-    process.env[newKey] = process.env[oldKey];
-    if (!process.env.TEAM_CONTEXT_SKIP_EXPORT) {
-      console.warn(`⚠ ${oldKey} is deprecated — rename to ${newKey}`);
-    }
-  }
-}
-
-// Also migrate config directory: if old ~/.claude/meridian/ exists but new doesn't, use old
-const OLD_DIR = path.join(HOME, '.claude', 'meridian');
-const EFFECTIVE_DIR = (fs.existsSync(WAYFIND_DIR) || !fs.existsSync(OLD_DIR)) ? WAYFIND_DIR : OLD_DIR;
-if (EFFECTIVE_DIR === OLD_DIR) {
-  console.warn('⚠ ~/.claude/meridian/ detected — rename to ~/.claude/team-context/');
-}
+const EFFECTIVE_DIR = WAYFIND_DIR;
 
 // Auto-load .env from config dir BEFORE requiring modules
 // (modules like content-store read env vars at load time)
@@ -2884,7 +2847,7 @@ function runMigrateToPlugin(args) {
   }
 
   // Step 3: Remove old command files (plugin skills replace these)
-  const oldCommandFiles = ['init-memory.md', 'init-team.md', 'doctor.md', 'journal.md', 'standup.md', 'review-prs.md'];
+  const oldCommandFiles = ['init-memory.md', 'init-team.md', 'init-folder.md', 'doctor.md', 'journal.md', 'standup.md', 'review-prs.md'];
   for (const file of oldCommandFiles) {
     const cmdPath = path.join(commandsDir, file);
     if (fs.existsSync(cmdPath)) {
@@ -4847,6 +4810,10 @@ const COMMANDS = {
     desc: 'Search indexed entries (journals + conversations, semantic or full-text)',
     run: (args) => runSearchJournals(args),
   },
+  'memory-compare': {
+    desc: 'Compare Claude Code auto-memory vs Wayfind memory systems',
+    run: () => require('./memory-compare').compare(),
+  },
   insights: {
     desc: 'Show insights from indexed journal data',
     run: (args) => runInsights(args),
@@ -5065,6 +5032,7 @@ function showHelp() {
   console.log('');
   console.log('In a Claude Code session:');
   console.log('  /init-memory                   Set up memory for current repo');
+  console.log('  /init-folder                   Set up memory for a non-repo folder');
   console.log('  /init-team                     Set up team context (journals, digests, Notion)');
   console.log('  /journal                       View your session journal digest');
   console.log('  /doctor                        Check installation health');

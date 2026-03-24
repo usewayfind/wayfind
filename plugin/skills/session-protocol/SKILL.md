@@ -35,4 +35,6 @@ the plugin's hooks. This skill tells you where state files live so you can load 
 - Keep `global-state.md` under 80 lines. Detail goes in `~/.claude/memory/` files.
 - Per-repo state files stay focused on that repo only.
 - New cross-repo topics get new files in `~/.claude/memory/`, not appended to global-state.md.
+- **NEVER write secrets, API keys, tokens, or credentials into memory or state files.** Store pointers to where secrets live, not the secrets themselves.
+- Do NOT write Wayfind files to `~/.claude/projects/<project>/memory/` root — that's Claude Code's native auto-memory space.
 - Do NOT use external memory databases or CLI tools for state storage. Use plain markdown files only.

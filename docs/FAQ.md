@@ -13,6 +13,10 @@ First, install the plugin if you haven't already:
 
 Then run `/wayfind:init-memory` in the repo. This creates `.claude/team-state.md` (shared, tracked) and `.claude/personal-state.md` (personal, gitignored), updates `.gitignore`, and registers the repo globally.
 
+### Can I use Wayfind outside a git repo?
+
+Yes. Run `/wayfind:init-folder` (or `/init-folder` with commands) in any directory — your home folder, an admin workspace, a scratch directory. It creates `.claude/personal-state.md` so context persists across sessions. This is useful for triage, cross-project coordination, vendor management, or any work that doesn't belong to a single repo. Cross-repo context that should be available everywhere should go in `~/.claude/memory/` instead.
+
 ### How do I set up a team?
 
 Run `/wayfind:init-team`. It walks you through creating a team, setting up profiles, creating a team-context repo, configuring Slack digests, and optionally connecting Notion.

@@ -87,6 +87,14 @@ Create them if missing. If `prompts/` is new, add the README from `templates/pro
 
 Store the team context repo path for later steps.
 
+## Step 1a: Non-Repo Folder Setup (Optional)
+
+After the team context repo is set up, ask:
+
+**"Do you have a non-repo folder you use for admin or cross-cutting work? (e.g., your home directory) We can set that up too so context from those sessions is preserved."**
+
+If yes, run `/wayfind:init-folder` in that directory (or guide them to run it later).
+
 ## Step 2: Slack Integration
 
 Ask: **"Do you want weekly digests posted to Slack? You'll need a Slack Incoming Webhook URL. If you have one, paste it. If not, I can walk you through creating one."**

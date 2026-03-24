@@ -142,6 +142,14 @@ Create `~/.claude/memory/wayfind-team-context.md` with:
 - <list of usernames with journal directories>
 ```
 
+## Step 1a: Non-Repo Folder Setup (Optional)
+
+After the team context repo is set up, ask:
+
+**"Do you have a non-repo folder you use for admin or cross-cutting work? (e.g., your home directory) We can set that up too so context from those sessions is preserved."**
+
+If yes, run `/init-folder` in that directory (or guide them to run it later).
+
 ## Step 1b: Link and Distribute Context
 
 Once the team context repo exists, link it so Wayfind knows where to find shared

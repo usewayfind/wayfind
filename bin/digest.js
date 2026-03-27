@@ -755,12 +755,12 @@ async function generateDigest(config, personaIds, sinceDate, onProgress) {
     signalsDir: config.signals_dir,
   };
   const storeResult = collectFromStore(sinceDate, storeOpts);
-  if (storeResult.entryCount > 0) {
+  if (storeResult.entryCount > 0 && storeResult.journals) {
     journalContent = storeResult.journals;
     // Use store signals if available, otherwise fall back to direct file scan
     signalContent = storeResult.signals || collectSignals(sinceDate, config.signals_dir);
   } else {
-    // Fallback: direct file scan (store not indexed)
+    // Fallback: direct file scan (store not indexed or content retrieval failed)
     signalContent = collectSignals(sinceDate, config.signals_dir);
     journalContent = collectJournals(sinceDate, config.journal_dir);
   }

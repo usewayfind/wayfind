@@ -2,6 +2,13 @@
 
 All notable changes to Wayfind are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.0.31] - 2026-03-27
+
+### Fixed
+- Digest generation produced "no activity" despite having thousands of indexed entries — `ensureContainerConfig()` didn't backfill `journal_dir`/`store_path` into configs created before those fields existed, causing content retrieval to look in a nonexistent container path
+- `collectFromStore()` now falls back to direct file scan when content retrieval fails (not just when metadata is empty)
+- Slack bot config also backfills missing `store_path`/`journal_dir` for the same reason
+
 ## [2.0.30] - 2026-03-24
 
 ### Added

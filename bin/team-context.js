@@ -4264,6 +4264,23 @@ function ensureContainerConfig() {
     changed = true;
   }
 
+  // Backfill container-specific paths into existing digest config (fixes configs
+  // created before store_path/journal_dir/signals_dir were added)
+  if (config.digest) {
+    const defaults = {
+      store_path: process.env.TEAM_CONTEXT_STORE_PATH || contentStore.DEFAULT_STORE_PATH,
+      journal_dir: process.env.TEAM_CONTEXT_JOURNALS_DIR || '/data/journals',
+      signals_dir: process.env.TEAM_CONTEXT_SIGNALS_DIR || contentStore.DEFAULT_SIGNALS_DIR,
+      team_context_dir: process.env.TEAM_CONTEXT_TEAM_CONTEXT_DIR || '',
+    };
+    for (const [key, val] of Object.entries(defaults)) {
+      if (!config.digest[key]) {
+        config.digest[key] = val;
+        changed = true;
+      }
+    }
+  }
+
   // Slack bot config
   if (!config.slack_bot && process.env.SLACK_BOT_TOKEN) {
     config.slack_bot = {
@@ -4279,6 +4296,20 @@ function ensureContainerConfig() {
       },
     };
     changed = true;
+  }
+
+  // Backfill container-specific paths into existing bot config
+  if (config.slack_bot) {
+    const botDefaults = {
+      store_path: process.env.TEAM_CONTEXT_STORE_PATH || contentStore.DEFAULT_STORE_PATH,
+      journal_dir: process.env.TEAM_CONTEXT_JOURNALS_DIR || '/data/journals',
+    };
+    for (const [key, val] of Object.entries(botDefaults)) {
+      if (!config.slack_bot[key]) {
+        config.slack_bot[key] = val;
+        changed = true;
+      }
+    }
   }
 
   // GitHub connector

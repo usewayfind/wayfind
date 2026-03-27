@@ -25,6 +25,10 @@ if [ -z "$WAYFIND" ]; then
   exit 0
 fi
 
+# Pull latest team-context in the background so this session sees
+# other engineers' recent work without blocking session start
+$WAYFIND context pull --quiet --background 2>/dev/null || true
+
 # Rebuild Active Projects table (idempotent, concurrent-safe)
 $WAYFIND status --write --quiet 2>/dev/null || true
 

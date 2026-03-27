@@ -2,6 +2,18 @@
 
 All notable changes to Wayfind are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.0.32] - 2026-03-27
+
+### Added
+- `wayfind context pull` — fetches latest team-context repo so engineers see each other's recent decisions without waiting for the daily digest
+- Session-start hook runs `context pull` in the background automatically — zero impact on startup time
+- Doctor warns if team-context hasn't been pulled in >24 hours (surfaces persistent auth/network issues)
+- Clean-machine onboarding simulation test (22 assertions covering install-to-first-use flow)
+
+### Fixed
+- `sync-public` falsely reported "already up to date" when files had changed (#124) — replaced stale git index check with content-level diff
+- Digest generation produced "no activity" despite having thousands of indexed entries (#148 unrelated, shipped in 2.0.31)
+
 ## [2.0.31] - 2026-03-27
 
 ### Fixed

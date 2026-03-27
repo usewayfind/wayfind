@@ -269,6 +269,54 @@ check_memory_files() {
     [ "$COUNT" -gt 0 ] && ok "$COUNT memory file(s) found" || info "No memory files yet"
 }
 
+check_team_context_freshness() {
+    echo ""
+    echo "Team context sync"
+
+    # Find team-context path via wayfind CLI
+    local TEAM_PATH=""
+    if [ -f "$HOME/repos/greg/wayfind/bin/team-context.js" ]; then
+        TEAM_PATH=$(node "$HOME/repos/greg/wayfind/bin/team-context.js" context show 2>/dev/null | grep 'Path:' | head -1 | sed 's/.*Path: *//' || true)
+    elif command -v wayfind >/dev/null 2>&1; then
+        TEAM_PATH=$(wayfind context show 2>/dev/null | grep 'Path:' | head -1 | sed 's/.*Path: *//' || true)
+    fi
+
+    if [ -z "$TEAM_PATH" ] || [ ! -d "$TEAM_PATH" ]; then
+        info "No team-context repo configured (optional)"
+        return
+    fi
+
+    local MARKER="$TEAM_PATH/.last-pull"
+    if [ ! -f "$MARKER" ]; then
+        # No pull has ever succeeded — check if this is a fresh install
+        # by looking at the git log age instead
+        local LAST_COMMIT
+        LAST_COMMIT=$(git -C "$TEAM_PATH" log -1 --format='%ci' 2>/dev/null || echo "")
+        if [ -z "$LAST_COMMIT" ]; then
+            info "Team-context repo exists but has no commits"
+        else
+            ok "Team-context configured (pull marker will appear after next session start)"
+        fi
+        return
+    fi
+
+    local PULL_TIME
+    PULL_TIME=$(cat "$MARKER")
+    local PULL_EPOCH
+    PULL_EPOCH=$(date -d "$PULL_TIME" +%s 2>/dev/null || date -j -f "%Y-%m-%dT%H:%M:%S" "${PULL_TIME%%.*}" +%s 2>/dev/null || echo 0)
+    local NOW_EPOCH
+    NOW_EPOCH=$(date +%s)
+    local AGE_HOURS=$(( (NOW_EPOCH - PULL_EPOCH) / 3600 ))
+
+    if [ "$AGE_HOURS" -gt 24 ]; then
+        warn "Team-context last pulled ${AGE_HOURS}h ago — other engineers' context may be stale"
+        info "Run: wayfind context pull"
+        ISSUES=$((ISSUES + 1))
+    else
+        ok "Team-context pulled ${AGE_HOURS}h ago"
+    fi
+}
+
 check_team_versions() {
     echo ""
     echo "Team version compliance"
@@ -330,6 +378,7 @@ echo "══════════════════════"
 check_hook_registered
 check_global_state
 check_backup
+check_team_context_freshness
 check_team_versions
 check_storage_backend
 check_memory_files

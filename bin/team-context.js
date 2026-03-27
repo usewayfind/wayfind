@@ -3283,9 +3283,12 @@ async function runContext(args) {
     case 'default':
       contextSetDefault(subArgs);
       break;
+    case 'pull':
+      contextPull(subArgs);
+      break;
     default:
       console.error(`Unknown context subcommand: ${sub}`);
-      console.error('Available: init, sync, show, add, bind, list, default');
+      console.error('Available: init, sync, show, add, bind, list, default, pull');
       process.exit(1);
   }
 }
@@ -3426,6 +3429,61 @@ function contextSync() {
   }
 
   console.log(`\nSynced ${synced} file(s) to .claude/context/`);
+}
+
+/**
+ * Pull latest from the team-context repo so session state reflects
+ * other engineers' recent work. Called by the session-start hook.
+ *
+ * Behavior:
+ *   - Pulls the team-context repo (journals, signals, shared context)
+ *   - Skips gracefully if offline, if pull fails, or if repo is dirty
+ *   - Does NOT touch the current working repo — devs handle that themselves
+ *   - Designed to run within the session-start hook's timeout
+ *
+ * @param {string[]} args - CLI arguments (--quiet suppresses output)
+ */
+function contextPull(args) {
+  const quiet = args.includes('--quiet');
+  const background = args.includes('--background');
+  const log = quiet ? () => {} : console.log;
+
+  const teamPath = getTeamContextPath();
+  if (!teamPath || !fs.existsSync(path.join(teamPath, '.git'))) {
+    if (!quiet) log('[wayfind] No team-context repo configured — skipping pull');
+    return;
+  }
+
+  const markerFile = path.join(teamPath, '.last-pull');
+
+  if (background) {
+    // Fire-and-forget — don't block session start
+    const child = require('child_process').spawn(
+      process.execPath,
+      [__filename, 'context', 'pull', '--quiet'],
+      { stdio: 'ignore', detached: true, env: { ...process.env } }
+    );
+    child.unref();
+    return;
+  }
+
+  const result = spawnSync('git', ['-C', teamPath, 'pull', '--rebase', '--autostash', '--quiet'], {
+    stdio: 'pipe',
+    timeout: 10000,
+  });
+
+  if (result.status === 0) {
+    log('[wayfind] Pulled latest team-context');
+    // Mark success — doctor checks this to warn on prolonged failures
+    try { fs.writeFileSync(markerFile, new Date().toISOString()); } catch {}
+  } else if (result.error && result.error.code === 'ETIMEDOUT') {
+    log('[wayfind] Team-context pull timed out — using local state');
+  } else {
+    const stderr = (result.stderr || '').toString().trim();
+    if (stderr && !quiet) {
+      console.error(`[wayfind] Team-context pull skipped: ${stderr.split('\n')[0]}`);
+    }
+  }
 }
 
 function contextShow() {
@@ -5001,8 +5059,9 @@ const COMMANDS = {
       }
       console.log('Sanitization passed — no proprietary content detected.');
 
-      // Show what changed
-      const diffResult = spawnSync('git', ['status', '--short'], { cwd: tmpDir, stdio: 'pipe' });
+      // Refresh git index so status detects copied files reliably
+      spawnSync('git', ['add', '-A'], { cwd: tmpDir, stdio: 'pipe' });
+      const diffResult = spawnSync('git', ['diff', '--cached', '--name-only'], { cwd: tmpDir, stdio: 'pipe' });
       const changes = (diffResult.stdout || '').toString().trim();
 
       if (!changes) {

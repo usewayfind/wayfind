@@ -4322,17 +4322,17 @@ function ensureContainerConfig() {
     changed = true;
   }
 
-  // Backfill container-specific paths into existing digest config (fixes configs
-  // created before store_path/journal_dir/signals_dir were added)
+  // Override container-specific paths in digest config — the mounted connectors.json
+  // may have host paths that don't exist inside the container
   if (config.digest) {
-    const defaults = {
+    const containerPaths = {
       store_path: process.env.TEAM_CONTEXT_STORE_PATH || contentStore.DEFAULT_STORE_PATH,
       journal_dir: process.env.TEAM_CONTEXT_JOURNALS_DIR || '/data/journals',
       signals_dir: process.env.TEAM_CONTEXT_SIGNALS_DIR || contentStore.DEFAULT_SIGNALS_DIR,
       team_context_dir: process.env.TEAM_CONTEXT_TEAM_CONTEXT_DIR || '',
     };
-    for (const [key, val] of Object.entries(defaults)) {
-      if (!config.digest[key]) {
+    for (const [key, val] of Object.entries(containerPaths)) {
+      if (config.digest[key] !== val) {
         config.digest[key] = val;
         changed = true;
       }
@@ -4356,14 +4356,14 @@ function ensureContainerConfig() {
     changed = true;
   }
 
-  // Backfill container-specific paths into existing bot config
+  // Override container-specific paths in bot config (same reason as digest above)
   if (config.slack_bot) {
-    const botDefaults = {
+    const botPaths = {
       store_path: process.env.TEAM_CONTEXT_STORE_PATH || contentStore.DEFAULT_STORE_PATH,
       journal_dir: process.env.TEAM_CONTEXT_JOURNALS_DIR || '/data/journals',
     };
-    for (const [key, val] of Object.entries(botDefaults)) {
-      if (!config.slack_bot[key]) {
+    for (const [key, val] of Object.entries(botPaths)) {
+      if (config.slack_bot[key] !== val) {
         config.slack_bot[key] = val;
         changed = true;
       }

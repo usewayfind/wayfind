@@ -2,6 +2,14 @@
 
 All notable changes to Wayfind are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.0.35] - 2026-03-28
+
+### Fixed
+- Container config paths: `ensureContainerConfig()` now always overrides digest/bot paths with container-appropriate values, even when the mounted `connectors.json` has host paths (#153)
+
+### Added
+- `wayfind doctor` now checks embedding coverage — warns loudly when entries lack embeddings, differentiates between "no API key" and "key set but no embeddings generated"
+
 ## [2.0.34] - 2026-03-28
 
 ### Fixed

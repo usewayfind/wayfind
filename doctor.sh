@@ -466,6 +466,52 @@ check_storage_backend() {
     else
         [ "$VERBOSE" = true ] && info "No connectors.json — signal freshness check skipped"
     fi
+
+    # ── 4. Embedding coverage ───────────────────────────────────────────────
+    local EMBED_RESULT
+    EMBED_RESULT=$(node -e "
+      try {
+        const storage = require('$SCRIPT_DIR/bin/storage/index.js');
+        const storePath = '$WAYFIND_DIR/content-store';
+        const backend = storage.getBackend(storePath);
+        const idx = backend.loadIndex();
+        if (!idx || !idx.entries) { console.log('SKIP'); process.exit(0); }
+        let total = 0, embedded = 0;
+        for (const e of Object.values(idx.entries)) { total++; if (e.hasEmbedding) embedded++; }
+        if (total === 0) { console.log('SKIP'); process.exit(0); }
+        const pct = Math.round(100 * embedded / total);
+        const hasKey = !!(process.env.OPENAI_API_KEY || process.env.AZURE_OPENAI_EMBEDDING_ENDPOINT);
+        console.log(pct + ':' + embedded + ':' + total + ':' + hasKey);
+      } catch (e) {
+        console.log('SKIP:' + e.message.split('\n')[0]);
+      }
+    " 2>/dev/null) || EMBED_RESULT="SKIP"
+
+    if [[ "$EMBED_RESULT" != SKIP* ]]; then
+        IFS=':' read -r PCT EMBEDDED TOTAL HAS_KEY <<< "$EMBED_RESULT"
+        if [ "$PCT" -ge 90 ]; then
+            ok "Embeddings: $EMBEDDED/$TOTAL entries ($PCT%)"
+        elif [ "$PCT" -ge 50 ]; then
+            warn "Embeddings: only $EMBEDDED/$TOTAL entries ($PCT%) — search quality degraded"
+            info "Run: wayfind reindex  (with OPENAI_API_KEY or AZURE_OPENAI_EMBEDDING_* set)"
+            ISSUES=$((ISSUES + 1))
+        elif [ "$PCT" -gt 0 ]; then
+            err "Embeddings: $EMBEDDED/$TOTAL entries ($PCT%) — semantic search mostly broken"
+            info "Run: wayfind reindex  (with OPENAI_API_KEY or AZURE_OPENAI_EMBEDDING_* set)"
+            ISSUES=$((ISSUES + 1))
+        else
+            if [ "$HAS_KEY" = "true" ]; then
+                err "Embeddings: 0/$TOTAL entries — embedding API key is set but no embeddings generated"
+                info "Run: wayfind reindex  to generate embeddings"
+                ISSUES=$((ISSUES + 1))
+            else
+                warn "Embeddings: 0/$TOTAL entries — no embedding API key configured"
+                info "Set OPENAI_API_KEY or AZURE_OPENAI_EMBEDDING_* then run: wayfind reindex"
+                ISSUES=$((ISSUES + 1))
+            fi
+        fi
+    fi
+
     set -e  # Restore errexit
 }
 

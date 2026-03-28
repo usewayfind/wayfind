@@ -2,6 +2,14 @@
 
 All notable changes to Wayfind are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.0.36] - 2026-03-28
+
+### Added
+- Notion connector: page-level content extraction — targeted pages have their full body text (headings, paragraphs, lists, callouts, to-dos) included in signals, not just metadata (#155)
+- Notion connector: `pages` config field for targeting specific page IDs for content extraction
+- `TEAM_CONTEXT_NOTION_PAGES` env var for container configuration
+- `wayfind pull notion --configure` now prompts for page IDs alongside database IDs
+
 ## [2.0.35] - 2026-03-28
 
 ### Fixed

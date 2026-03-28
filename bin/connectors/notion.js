@@ -249,11 +249,23 @@ async function configure() {
     .map((d) => d.trim())
     .filter(Boolean);
 
+  // Optional: page IDs for full content extraction
+  console.log('');
+  console.log('Optional: specific page IDs to extract full content from (comma-separated).');
+  console.log('These pages will have their body text included in signals, not just metadata.');
+  console.log('Find page IDs in the URL: notion.so/<workspace>/<page-id>');
+  const pageInput = await ask('Page IDs: ');
+  const pages = pageInput
+    .split(',')
+    .map((p) => p.trim().replace(/-/g, ''))
+    .filter(Boolean);
+
   const channelConfig = {
     transport: 'https',
     token,
     token_env: 'NOTION_TOKEN',
     databases: databases.length > 0 ? databases : null,
+    pages: pages.length > 0 ? pages : null,
     last_pull: null,
   };
 
@@ -261,8 +273,12 @@ async function configure() {
   console.log('Notion connector configured.');
   if (databases.length > 0) {
     console.log(`Monitoring ${databases.length} database(s).`);
-  } else {
-    console.log('Monitoring all shared pages.');
+  }
+  if (pages.length > 0) {
+    console.log(`Extracting content from ${pages.length} page(s).`);
+  }
+  if (databases.length === 0 && pages.length === 0) {
+    console.log('Monitoring all shared pages (metadata only).');
   }
   console.log('');
 
@@ -298,6 +314,37 @@ async function pull(config, since) {
     dbEntries.push(...entries.map((e) => ({ ...e, _databaseId: dbId })));
   }
 
+  // Fetch content for targeted pages
+  const targetedPageIds = config.pages || [];
+  const pageContents = {};
+  if (targetedPageIds.length > 0) {
+    for (const pageId of targetedPageIds) {
+      try {
+        const content = await fetchPageContent(token, pageId);
+        if (content && content.trim()) {
+          pageContents[pageId] = content;
+        }
+      } catch {
+        // Skip pages that fail — may have been deleted or unshared
+      }
+    }
+    // Also fetch targeted pages that aren't in the recent pages list
+    const recentPageIds = new Set(pages.map((p) => p.id.replace(/-/g, '')));
+    for (const pageId of targetedPageIds) {
+      if (!recentPageIds.has(pageId.replace(/-/g, ''))) {
+        try {
+          const endpoint = `/pages/${pageId}`;
+          const page = await notionGet(token, endpoint);
+          if (page && page.id) {
+            pages.push(page);
+          }
+        } catch {
+          // Skip — page may not exist
+        }
+      }
+    }
+  }
+
   // Fetch comment counts for active pages (top 20 by recency)
   const activePages = pages.slice(0, 20);
   const commentCounts = {};
@@ -314,6 +361,7 @@ async function pull(config, since) {
 
   // Analyze
   const analysis = analyzeActivity(pages, dbEntries, commentCounts, sinceDate, todayDate, userMap);
+  analysis.pageContents = pageContents;
 
   // Generate markdown
   const md = generateMarkdown(analysis, sinceDate, todayDate, timestamp, userMap);
@@ -493,6 +541,86 @@ async function fetchComments(token, pageId) {
     return Array.isArray(response.results) ? response.results : [];
   } catch {
     return [];
+  }
+}
+
+// ── Page content extraction ────────────────────────────────────────────────
+
+async function fetchPageContent(token, pageId, maxChars = 5000) {
+  const blocks = [];
+  let cursor = undefined;
+  const MAX_REQUESTS = 5;
+  let requests = 0;
+
+  while (requests < MAX_REQUESTS) {
+    requests++;
+    const endpoint = `/blocks/${pageId}/children?page_size=100` + (cursor ? `&start_cursor=${cursor}` : '');
+    let response;
+    try {
+      response = await notionGet(token, endpoint);
+    } catch {
+      break;
+    }
+    const results = Array.isArray(response.results) ? response.results : [];
+    blocks.push(...results);
+    if (!response.has_more) break;
+    cursor = response.next_cursor;
+  }
+
+  // Convert blocks to markdown
+  const lines = [];
+  let totalChars = 0;
+
+  for (const block of blocks) {
+    if (totalChars >= maxChars) break;
+    const line = blockToMarkdown(block);
+    if (line !== null) {
+      lines.push(line);
+      totalChars += line.length;
+    }
+  }
+
+  return lines.join('\n');
+}
+
+function blockToMarkdown(block) {
+  const type = block.type;
+  if (!type) return null;
+
+  const richTextToPlain = (rt) =>
+    Array.isArray(rt) ? rt.map((t) => t.plain_text || '').join('') : '';
+
+  const data = block[type];
+  if (!data) return null;
+
+  switch (type) {
+    case 'paragraph':
+      return richTextToPlain(data.rich_text);
+    case 'heading_1':
+      return '# ' + richTextToPlain(data.rich_text);
+    case 'heading_2':
+      return '## ' + richTextToPlain(data.rich_text);
+    case 'heading_3':
+      return '### ' + richTextToPlain(data.rich_text);
+    case 'bulleted_list_item':
+      return '- ' + richTextToPlain(data.rich_text);
+    case 'numbered_list_item':
+      return '1. ' + richTextToPlain(data.rich_text);
+    case 'to_do':
+      return (data.checked ? '- [x] ' : '- [ ] ') + richTextToPlain(data.rich_text);
+    case 'toggle':
+      return '> ' + richTextToPlain(data.rich_text);
+    case 'callout':
+      return '> ' + richTextToPlain(data.rich_text);
+    case 'quote':
+      return '> ' + richTextToPlain(data.rich_text);
+    case 'code':
+      return '```\n' + richTextToPlain(data.rich_text) + '\n```';
+    case 'divider':
+      return '---';
+    default:
+      // Skip unsupported block types (image, embed, file, etc.)
+      return null;
   }
 }
 
@@ -698,6 +826,22 @@ function generateMarkdown(analysis, sinceDate, todayDate, timestamp, userMap) {
       lines.push(`- **${title}** — ${count} new comment(s)`);
     }
     lines.push('');
+  }
+
+  // Targeted page content
+  const pageContents = analysis.pageContents || {};
+  if (Object.keys(pageContents).length > 0) {
+    lines.push('## Page Content');
+    lines.push('');
+    for (const [pageId, content] of Object.entries(pageContents)) {
+      // Find the page title from the pages list
+      const page = analysis.pages.find((p) => p.id.replace(/-/g, '') === pageId.replace(/-/g, ''));
+      const title = page ? extractTitle(page) : `Page ${pageId.slice(0, 8)}`;
+      lines.push(`### ${sanitizeForMarkdown(title)}`);
+      lines.push('');
+      lines.push(content);
+      lines.push('');
+    }
   }
 
   // Summary

@@ -4414,11 +4414,13 @@ function ensureContainerConfig() {
   // Notion connector
   if (!config.notion && process.env.NOTION_TOKEN) {
     const databases = process.env.TEAM_CONTEXT_NOTION_DATABASES;
+    const pages = process.env.TEAM_CONTEXT_NOTION_PAGES;
     config.notion = {
       transport: 'https',
       token: process.env.NOTION_TOKEN,
       token_env: 'NOTION_TOKEN',
       databases: databases ? databases.split(',').map((d) => d.trim()) : null,
+      pages: pages ? pages.split(',').map((p) => p.trim().replace(/-/g, '')) : null,
       last_pull: null,
     };
     changed = true;

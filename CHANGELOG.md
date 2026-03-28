@@ -2,6 +2,11 @@
 
 All notable changes to Wayfind are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.0.34] - 2026-03-28
+
+### Fixed
+- Text search now reads signal file content — previously only searched metadata (title, tags) for signal entries, missing actual GitHub/Intercom/Notion content (#153)
+
 ## [2.0.33] - 2026-03-28
 
 ### Fixed

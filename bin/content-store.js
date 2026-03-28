@@ -569,8 +569,38 @@ function searchText(query, options = {}) {
       ...(entry.tags || []),
     ].filter(Boolean).join(' ').toLowerCase().replace(/[-_]/g, ' ');
 
+    // For signal entries, read content directly from the signal file
+    if (entry.source === 'signal') {
+      const signalsDir = options.signalsDir || DEFAULT_SIGNALS_DIR;
+      if (signalsDir) {
+        // Signal files live at signalsDir/<channel>/<date>.md or signalsDir/<channel>/<owner>/<repo>/<date>.md
+        // The repo field tells us the path: "signals/<channel>" or "<owner>/<repo>"
+        const repo = entry.repo || '';
+        const candidates = [];
+        if (repo.startsWith('signals/')) {
+          const channel = repo.replace('signals/', '');
+          candidates.push(path.join(signalsDir, channel, `${entry.date}.md`));
+          candidates.push(path.join(signalsDir, channel, `${entry.date}-summary.md`));
+        } else if (repo.includes('/')) {
+          // owner/repo format — find which channel it's under
+          for (const channel of ['github', 'intercom', 'notion']) {
+            candidates.push(path.join(signalsDir, channel, repo, `${entry.date}.md`));
+          }
+        }
+        for (const fp of candidates) {
+          try {
+            const content = fs.readFileSync(fp, 'utf8').toLowerCase();
+            searchable += ' ' + content.replace(/[-_]/g, ' ');
+            break;
+          } catch {
+            // Try next candidate
+          }
+        }
+      }
+    }
+
     // Also include the full journal entry content if available
-    const journalContent = getJournalContent(entry.date, entry.user);
+    const journalContent = entry.source !== 'signal' ? getJournalContent(entry.date, entry.user) : null;
     if (journalContent) {
       // Find this entry's section in the journal file.
       // Try exact match first, then normalize hyphens/spaces for fuzzy match.

@@ -155,27 +155,32 @@ class SqliteBackend {
     fs.mkdirSync(this.storePath, { recursive: true });
     this.db = new Database(this.dbPath);
     this.db.pragma('journal_mode = WAL');
+
+    // Migrate existing databases BEFORE running full schema (which creates
+    // indexes on columns that may not exist yet in pre-v2.0.29 databases).
+    const tables = this.db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().map(r => r.name);
+    if (tables.includes('decisions')) {
+      const cols = this.db.prepare('PRAGMA table_info(decisions)').all().map(c => c.name);
+      if (!cols.includes('quality_score')) {
+        this.db.exec('ALTER TABLE decisions ADD COLUMN quality_score INTEGER DEFAULT 0');
+      }
+      if (!cols.includes('distill_tier')) {
+        this.db.exec("ALTER TABLE decisions ADD COLUMN distill_tier TEXT DEFAULT 'raw'");
+      }
+      if (!cols.includes('distilled_from')) {
+        this.db.exec('ALTER TABLE decisions ADD COLUMN distilled_from TEXT DEFAULT NULL');
+      }
+      if (!cols.includes('distilled_at')) {
+        this.db.exec('ALTER TABLE decisions ADD COLUMN distilled_at INTEGER DEFAULT NULL');
+      }
+    }
+
     this.db.exec(SCHEMA_SQL);
     fs.chmodSync(this.dbPath, 0o600);
 
     const existing = this.db.prepare('SELECT value FROM metadata WHERE key = ?').get('schema_version');
     if (!existing) {
       this.db.prepare('INSERT INTO metadata (key, value) VALUES (?, ?)').run('schema_version', SCHEMA_VERSION);
-    }
-
-    // Migrate existing databases: add new columns if they don't exist
-    const cols = this.db.prepare('PRAGMA table_info(decisions)').all().map(c => c.name);
-    if (!cols.includes('quality_score')) {
-      this.db.exec('ALTER TABLE decisions ADD COLUMN quality_score INTEGER DEFAULT 0');
-    }
-    if (!cols.includes('distill_tier')) {
-      this.db.exec('ALTER TABLE decisions ADD COLUMN distill_tier TEXT DEFAULT \'raw\'');
-    }
-    if (!cols.includes('distilled_from')) {
-      this.db.exec('ALTER TABLE decisions ADD COLUMN distilled_from TEXT DEFAULT NULL');
-    }
-    if (!cols.includes('distilled_at')) {
-      this.db.exec('ALTER TABLE decisions ADD COLUMN distilled_at INTEGER DEFAULT NULL');
     }
   }
 

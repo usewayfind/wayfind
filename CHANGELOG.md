@@ -2,6 +2,11 @@
 
 All notable changes to Wayfind are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.0.38] - 2026-03-28
+
+### Fixed
+- SQLite schema migration order: databases created before v2.0.29 failed to initialize because `CREATE INDEX` on new columns ran before `ALTER TABLE` added them. Migration now runs column additions first, then schema (including indexes). Fixes "no such column: quality_score" error that forced JSON fallback in containers.
+
 ## [2.0.37] - 2026-03-28
 
 ### Added

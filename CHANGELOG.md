@@ -2,6 +2,17 @@
 
 All notable changes to Wayfind are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.0.43] - 2026-03-28
+
+### Fixed
+- `wayfind doctor` storage backend section now uses `resolveStorePath()` (team-aware) instead of the legacy global store path. Previously the backend and embedding checks always inspected `~/.claude/team-context/content-store` regardless of which team was active.
+- Doctor now displays the active team ID and resolved store path under "Storage backend", making per-team store isolation verifiable at a glance.
+
+## [2.0.42] - 2026-03-28
+
+### Fixed
+- `setup.sh` no longer manages the Claude Code status line — that responsibility belongs to the user's config.
+
 ## [2.0.41] - 2026-03-28
 
 ### Fixed

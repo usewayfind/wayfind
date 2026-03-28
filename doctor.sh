@@ -363,16 +363,45 @@ check_storage_backend() {
         info "TEAM_CONTEXT_STORAGE_BACKEND=$TEAM_CONTEXT_STORAGE_BACKEND (env override)"
     fi
 
-    local WAYFIND_DIR="${WAYFIND_DIR:-$HOME/.claude/team-context}"
     local SCRIPT_DIR
     SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+    # Resolve the team-scoped store path (respects .claude/wayfind.json + context.json default)
+    local RESOLVED_STORE ACTIVE_TEAM_ID
+    RESOLVED_STORE=$(node -e "
+      try {
+        const cs = require('$SCRIPT_DIR/bin/content-store.js');
+        console.log(cs.resolveStorePath());
+      } catch (e) {
+        console.log('SKIP:' + e.message.split('\n')[0]);
+      }
+    " 2>/dev/null) || RESOLVED_STORE="SKIP:content-store not available"
+    ACTIVE_TEAM_ID=$(node -e "
+      try {
+        const cs = require('$SCRIPT_DIR/bin/content-store.js');
+        // resolveStorePath triggers team ID resolution; extract from path
+        const p = cs.resolveStorePath();
+        const m = p && p.match(/teams\/([^/]+)\/content-store/);
+        console.log(m ? m[1] : 'default');
+      } catch (e) {
+        console.log('unknown');
+      }
+    " 2>/dev/null) || ACTIVE_TEAM_ID="unknown"
+
+    if [[ "$RESOLVED_STORE" != SKIP:* ]]; then
+        ok "Active team: $ACTIVE_TEAM_ID"
+        info "Store path: $RESOLVED_STORE"
+    fi
+
+    local WAYFIND_DIR="${WAYFIND_DIR:-$HOME/.claude/team-context}"
 
     # ── 1. Which backend is active ───────────────────────────────────────────
     local BACKEND_RESULT=""
     BACKEND_RESULT=$(node -e "
       try {
+        const cs = require('$SCRIPT_DIR/bin/content-store.js');
         const storage = require('$SCRIPT_DIR/bin/storage/index.js');
-        const storePath = '$WAYFIND_DIR';
+        const storePath = cs.resolveStorePath();
         storage.getBackend(storePath);
         const info = storage.getBackendInfo(storePath);
         if (!info) { console.log('NONE'); process.exit(0); }
@@ -472,8 +501,9 @@ check_storage_backend() {
     local EMBED_RESULT
     EMBED_RESULT=$(node -e "
       try {
+        const cs = require('$SCRIPT_DIR/bin/content-store.js');
         const storage = require('$SCRIPT_DIR/bin/storage/index.js');
-        const storePath = '$WAYFIND_DIR/content-store';
+        const storePath = cs.resolveStorePath();
         const backend = storage.getBackend(storePath);
         const idx = backend.loadIndex();
         if (!idx || !idx.entries) { console.log('SKIP'); process.exit(0); }

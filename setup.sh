@@ -441,48 +441,6 @@ PYEOF
             fi
         fi
 
-        # Status line script
-        STATUSLINE_DEST="$HOME/.claude/team-context/statusline.sh"
-        if [ ! -f "$STATUSLINE_DEST" ] || [ "$UPDATE" = true ]; then
-            run cp "$SCRIPT_DIR/templates/statusline.sh" "$STATUSLINE_DEST"
-            run chmod +x "$STATUSLINE_DEST"
-            log "Installed status line: $STATUSLINE_DEST"
-        else
-            info "Status line already exists: $STATUSLINE_DEST — skipped"
-        fi
-
-        # Merge statusLine config into settings.json
-        if [ -f "$SETTINGS" ] && ! grep -q "statusLine" "$SETTINGS" 2>/dev/null; then
-            if [ "$DRY_RUN" = false ]; then
-                TMP_SL="$(mktemp)"
-                if python3 - "$SETTINGS" "$STATUSLINE_DEST" "$TMP_SL" <<'PYEOF' 2>/dev/null; then
-import json, sys
-settings_path, sl_cmd, out_path = sys.argv[1], sys.argv[2], sys.argv[3]
-try:
-    with open(settings_path) as f:
-        settings = json.load(f)
-except (json.JSONDecodeError, IOError):
-    sys.exit(1)
-if "statusLine" not in settings:
-    settings["statusLine"] = {"type": "command", "command": sl_cmd, "padding": 2}
-with open(out_path, "w") as f:
-    json.dump(settings, f, indent=2)
-    f.write("\n")
-PYEOF
-                    mv "$TMP_SL" "$SETTINGS"
-                    log "Added statusLine config to $SETTINGS"
-                else
-                    rm -f "$TMP_SL"
-                    warn "Could not add statusLine to $SETTINGS (malformed JSON or python3 unavailable)"
-                fi
-            else
-                info "[dry-run] Would add statusLine to $SETTINGS"
-            fi
-        else
-            if [ -f "$SETTINGS" ]; then
-                info "statusLine already configured in settings.json — skipped"
-            fi
-        fi
         ;;
 
     cursor)

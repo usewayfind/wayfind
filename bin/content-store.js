@@ -1852,6 +1852,114 @@ async function indexSignals(options = {}) {
     }
   }
 
+  // ── Chunk long signal entries for better embedding retrieval ──────────────
+  // Split signal content by ## headings into section-level entries.
+  // Each chunk gets its own embedding so semantic search matches at section level.
+  const MIN_CHUNK_CHARS = 200;
+  const MAX_CHUNK_CHARS = 3000;
+
+  // Collect all signal files across all channels for chunking
+  const allSignalFiles = [];
+  for (const ch of channels) {
+    const chDir = path.join(signalsDir, ch);
+    try {
+      const entries = fs.readdirSync(chDir, { withFileTypes: true });
+      for (const e of entries) {
+        if (e.isFile() && e.name.endsWith('.md')) {
+          allSignalFiles.push({ filePath: path.join(chDir, e.name), file: e.name, repo: 'signals/' + ch, channel: ch });
+        }
+      }
+      for (const ownerEntry of entries) {
+        if (!ownerEntry.isDirectory()) continue;
+        const ownerDir = path.join(chDir, ownerEntry.name);
+        let repoEntries;
+        try { repoEntries = fs.readdirSync(ownerDir, { withFileTypes: true }); } catch { continue; }
+        for (const repoEntry of repoEntries) {
+          if (!repoEntry.isDirectory()) continue;
+          const repoDir = path.join(ownerDir, repoEntry.name);
+          let repoFiles;
+          try { repoFiles = fs.readdirSync(repoDir).filter(f => f.endsWith('.md')); } catch { continue; }
+          for (const f of repoFiles) {
+            allSignalFiles.push({ filePath: path.join(repoDir, f), file: f, repo: `${ownerEntry.name}/${repoEntry.name}`, channel: ch });
+          }
+        }
+      }
+    } catch { continue; }
+  }
+
+  for (const { filePath, file, repo, channel: ch } of allSignalFiles) {
+    let content;
+    try {
+      content = fs.readFileSync(filePath, 'utf8');
+    } catch {
+      continue;
+    }
+    if (content.length < MIN_CHUNK_CHARS * 2) continue; // Too short to chunk
+
+    const dateMatch = file.match(/^(\d{4}-\d{2}-\d{2})/);
+    const date = dateMatch ? dateMatch[1] : file.replace(/\.md$/, '');
+    const titleMatch = content.match(/^#\s+(.+)$/m);
+    const parentTitle = titleMatch ? titleMatch[1].trim() : file.replace(/\.md$/, '');
+    const parentId = generateEntryId(date, repo, file.replace(/\.md$/, ''));
+
+    // Split by ## headings
+    const sections = content.split(/^(?=##\s)/m).filter(s => s.trim().length >= MIN_CHUNK_CHARS);
+    if (sections.length <= 1) continue; // Only one section — parent embedding is sufficient
+
+    for (let i = 0; i < sections.length; i++) {
+      let section = sections[i];
+      const headingMatch = section.match(/^##\s+(.+)$/m);
+      const sectionTitle = headingMatch ? headingMatch[1].trim() : `Section ${i + 1}`;
+      const chunkTitle = `${parentTitle} — ${sectionTitle}`;
+
+      if (section.length > MAX_CHUNK_CHARS) {
+        section = section.slice(0, MAX_CHUNK_CHARS);
+      }
+
+      const chunkId = generateEntryId(date, repo, `chunk-${i}-${file.replace(/\.md$/, '')}`);
+      const chunkHash = contentHash(section);
+      const existingChunk = existingIndex.entries[chunkId];
+
+      if (existingChunk && existingChunk.contentHash === chunkHash) {
+        if (doEmbeddings && !existingChunk.hasEmbedding) {
+          try {
+            const vec = await llm.generateEmbedding(section);
+            existingEmbeddings[chunkId] = vec;
+            existingChunk.hasEmbedding = true;
+          } catch {
+            // Skip
+          }
+        }
+        continue;
+      }
+
+      existingIndex.entries[chunkId] = {
+        date,
+        repo,
+        title: chunkTitle,
+        source: 'signal-chunk',
+        parentId,
+        chunkIndex: i,
+        user: '',
+        drifted: false,
+        contentHash: chunkHash,
+        contentLength: section.length,
+        tags: [ch, sectionTitle.toLowerCase()],
+        hasEmbedding: false,
+      };
+
+      if (doEmbeddings) {
+        try {
+          const vec = await llm.generateEmbedding(section);
+          existingEmbeddings[chunkId] = vec;
+          existingIndex.entries[chunkId].hasEmbedding = true;
+        } catch {
+          // Continue without embedding
+        }
+      }
+    }
+  }
+
   // Save
   existingIndex.entryCount = Object.keys(existingIndex.entries).length;
   backend.saveIndex(existingIndex);

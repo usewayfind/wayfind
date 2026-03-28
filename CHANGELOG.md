@@ -2,6 +2,11 @@
 
 All notable changes to Wayfind are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.0.37] - 2026-03-28
+
+### Added
+- Signal chunking: long signal files are split by `##` headings into section-level entries, each with its own embedding (#156). This makes semantic search match specific sections (e.g., a CI failure in one repo, a customer deep-dive) instead of averaging entire documents. Chunks carry `source: 'signal-chunk'`, `parentId`, and `chunkIndex` for reassembly.
+
 ## [2.0.36] - 2026-03-28
 
 ### Added

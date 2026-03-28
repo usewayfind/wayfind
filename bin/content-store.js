@@ -17,6 +17,98 @@ const DEFAULT_SIGNALS_DIR = HOME ? path.join(HOME, '.claude', 'team-context', 's
 const INDEX_VERSION = '2.0.0';
 const FILE_PERMS = 0o600;
 
+// ── Team-scoped path resolution ──────────────────────────────────────────────
+
+/** Cache team ID for the process lifetime (cwd doesn't change mid-command). */
+let _cachedTeamId;
+
+/**
+ * Resolve the active team ID from the local repo binding or context.json default.
+ * @returns {string|null}
+ */
+function _resolveTeamId() {
+  if (_cachedTeamId !== undefined) return _cachedTeamId;
+
+  // 1. .claude/wayfind.json in cwd
+  try {
+    const bindingFile = require('path').join(process.cwd(), '.claude', 'wayfind.json');
+    if (require('fs').existsSync(bindingFile)) {
+      const binding = JSON.parse(require('fs').readFileSync(bindingFile, 'utf8'));
+      if (binding.team_id) { _cachedTeamId = binding.team_id; return _cachedTeamId; }
+    }
+  } catch (_) {}
+
+  // 2. context.json default team
+  try {
+    const contextFile = HOME ? require('path').join(HOME, '.claude', 'team-context', 'context.json') : null;
+    if (contextFile && require('fs').existsSync(contextFile)) {
+      const ctx = JSON.parse(require('fs').readFileSync(contextFile, 'utf8'));
+      if (ctx.default) { _cachedTeamId = ctx.default; return _cachedTeamId; }
+    }
+  } catch (_) {}
+
+  _cachedTeamId = null;
+  return null;
+}
+
+/**
+ * One-time migration: copy global content store to the team-scoped path.
+ * Safe to call repeatedly — exits immediately if team store already exists.
+ */
+function _autoMigrateToTeamStore(teamStorePath) {
+  if (fs.existsSync(teamStorePath)) return;
+  if (!DEFAULT_STORE_PATH || !fs.existsSync(DEFAULT_STORE_PATH)) return;
+  try {
+    fs.mkdirSync(teamStorePath, { recursive: true });
+    for (const f of fs.readdirSync(DEFAULT_STORE_PATH)) {
+      const src = path.join(DEFAULT_STORE_PATH, f);
+      if (fs.statSync(src).isFile()) {
+        fs.copyFileSync(src, path.join(teamStorePath, f));
+      }
+    }
+    fs.writeFileSync(path.join(teamStorePath, '.migrated-from-global'), new Date().toISOString());
+  } catch (_) {
+    // Non-fatal — fresh store will be created on first write
+  }
+}
+
+/**
+ * Resolve the content store path.
+ * Priority:
+ *   1. TEAM_CONTEXT_STORE_PATH env var (container always sets this)
+ *   2. Explicit teamId argument
+ *   3. Repo-level .claude/wayfind.json team_id
+ *   4. context.json default team
+ *   5. Legacy DEFAULT_STORE_PATH
+ * @param {string} [teamId] - Explicit team ID override
+ * @returns {string|null}
+ */
+function resolveStorePath(teamId) {
+  if (process.env.TEAM_CONTEXT_STORE_PATH) return process.env.TEAM_CONTEXT_STORE_PATH;
+  const tid = teamId || _resolveTeamId();
+  if (tid && HOME) {
+    const teamStorePath = path.join(HOME, '.claude', 'team-context', 'teams', tid, 'content-store');
+    _autoMigrateToTeamStore(teamStorePath);
+    return teamStorePath;
+  }
+  return DEFAULT_STORE_PATH;
+}
+
+/**
+ * Resolve the signals directory path.
+ * Same priority chain as resolveStorePath.
+ * @param {string} [teamId] - Explicit team ID override
+ * @returns {string|null}
+ */
+function resolveSignalsDir(teamId) {
+  if (process.env.TEAM_CONTEXT_SIGNALS_DIR) return process.env.TEAM_CONTEXT_SIGNALS_DIR;
+  const tid = teamId || _resolveTeamId();
+  if (tid && HOME) {
+    return path.join(HOME, '.claude', 'team-context', 'teams', tid, 'signals');
+  }
+  return DEFAULT_SIGNALS_DIR;
+}
+
 // Field mapping for journal entries
 const FIELD_MAP = {
   'Why': 'why',
@@ -310,7 +402,7 @@ function cosineSimilarity(a, b) {
  */
 async function indexJournals(options = {}) {
   const journalDir = options.journalDir || DEFAULT_JOURNAL_DIR;
-  const storePath = options.storePath || DEFAULT_STORE_PATH;
+  const storePath = options.storePath || resolveStorePath();
   const doEmbeddings = options.embeddings !== undefined
     ? options.embeddings
     : !!(process.env.OPENAI_API_KEY || process.env.AZURE_OPENAI_EMBEDDING_ENDPOINT || llm.isSimulation());
@@ -468,7 +560,7 @@ async function indexJournals(options = {}) {
  * @returns {Promise<Array<{ id: string, score: number, entry: Object }>>}
  */
 async function searchJournals(query, options = {}) {
-  const storePath = options.storePath || DEFAULT_STORE_PATH;
+  const storePath = options.storePath || resolveStorePath();
   const limit = options.limit || 10;
 
   const backend = getBackend(storePath);
@@ -522,7 +614,7 @@ async function searchJournals(query, options = {}) {
  * @returns {Array<{ id: string, score: number, entry: Object }>}
  */
 function searchText(query, options = {}) {
-  const storePath = options.storePath || DEFAULT_STORE_PATH;
+  const storePath = options.storePath || resolveStorePath();
   const journalDir = options.journalDir || DEFAULT_JOURNAL_DIR;
   const limit = options.limit || 10;
 
@@ -571,7 +663,7 @@ function searchText(query, options = {}) {
 
     // For signal entries, read content directly from the signal file
     if (entry.source === 'signal') {
-      const signalsDir = options.signalsDir || DEFAULT_SIGNALS_DIR;
+      const signalsDir = options.signalsDir || resolveSignalsDir();
       if (signalsDir) {
         // Signal files live at signalsDir/<channel>/<date>.md or signalsDir/<channel>/<owner>/<repo>/<date>.md
         // The repo field tells us the path: "signals/<channel>" or "<owner>/<repo>"
@@ -677,7 +769,7 @@ function applyFilters(entry, filters) {
  * @returns {Array<{ id: string, entry: Object }>}
  */
 function queryMetadata(options = {}) {
-  const storePath = options.storePath || DEFAULT_STORE_PATH;
+  const storePath = options.storePath || resolveStorePath();
   const index = getBackend(storePath).loadIndex();
   if (!index) return [];
 
@@ -699,7 +791,7 @@ function queryMetadata(options = {}) {
  * @returns {Object} - Insights object
  */
 function extractInsights(options = {}) {
-  const storePath = options.storePath || DEFAULT_STORE_PATH;
+  const storePath = options.storePath || resolveStorePath();
   const index = getBackend(storePath).loadIndex();
   if (!index || index.entryCount === 0) {
     return {
@@ -781,9 +873,9 @@ function extractInsights(options = {}) {
  * @returns {string|null} - Full entry text, or null if not found
  */
 function getEntryContent(entryId, options = {}) {
-  const storePath = options.storePath || DEFAULT_STORE_PATH;
+  const storePath = options.storePath || resolveStorePath();
   const journalDir = options.journalDir || DEFAULT_JOURNAL_DIR;
-  const signalsDir = options.signalsDir || DEFAULT_SIGNALS_DIR;
+  const signalsDir = options.signalsDir || resolveSignalsDir();
 
   const index = getBackend(storePath).loadIndex();
   if (!index || !index.entries[entryId]) return null;
@@ -1258,7 +1350,7 @@ function fileFingerprint(filePath) {
  */
 async function indexConversations(options = {}) {
   const projectsDir = options.projectsDir || DEFAULT_PROJECTS_DIR;
-  const storePath = options.storePath || DEFAULT_STORE_PATH;
+  const storePath = options.storePath || resolveStorePath();
   const doEmbeddings = options.embeddings !== undefined
     ? options.embeddings
     : !!(process.env.OPENAI_API_KEY || process.env.AZURE_OPENAI_EMBEDDING_ENDPOINT || llm.isSimulation());
@@ -1505,7 +1597,7 @@ Rules:
  * @returns {Promise<string>} - Synthesized onboarding document in markdown
  */
 async function generateOnboardingPack(repoQuery, options = {}) {
-  const storePath = options.storePath || DEFAULT_STORE_PATH;
+  const storePath = options.storePath || resolveStorePath();
   const journalDir = options.journalDir || DEFAULT_JOURNAL_DIR;
   const days = options.days || 90;
   const llmConfig = options.llmConfig || {
@@ -1683,8 +1775,8 @@ async function indexConversationsWithExport(options = {}) {
  * @returns {Promise<Object>} - Stats: { fileCount, newEntries, updatedEntries, skippedEntries }
  */
 async function indexSignals(options = {}) {
-  const signalsDir = options.signalsDir || DEFAULT_SIGNALS_DIR;
-  const storePath = options.storePath || DEFAULT_STORE_PATH;
+  const signalsDir = options.signalsDir || resolveSignalsDir();
+  const storePath = options.storePath || resolveStorePath();
   const doEmbeddings = options.embeddings !== undefined
     ? options.embeddings
     : !!(process.env.OPENAI_API_KEY || process.env.AZURE_OPENAI_EMBEDDING_ENDPOINT || llm.isSimulation());
@@ -1973,11 +2065,11 @@ async function indexSignals(options = {}) {
 // ── Digest feedback ─────────────────────────────────────────────────────────
 
 function loadFeedback(storePath) {
-  return getBackend(storePath || DEFAULT_STORE_PATH).loadFeedback();
+  return getBackend(storePath || resolveStorePath()).loadFeedback();
 }
 
 function saveFeedback(storePath, feedback) {
-  getBackend(storePath || DEFAULT_STORE_PATH).saveFeedback(feedback);
+  getBackend(storePath || resolveStorePath()).saveFeedback(feedback);
 }
 
 /**
@@ -2082,7 +2174,7 @@ function getDigestFeedback(options = {}) {
  *             focus: string[] }}
  */
 function computeQualityProfile(options = {}) {
-  const storePath = options.storePath || DEFAULT_STORE_PATH;
+  const storePath = options.storePath || resolveStorePath();
   const days = options.days || 30;
   const index = getBackend(storePath).loadIndex();
 
@@ -2217,12 +2309,12 @@ module.exports = {
   getBackend,
   getBackendType,
   // Backward-compatible storage wrappers (delegate to backend)
-  loadIndex: (storePath) => getBackend(storePath || DEFAULT_STORE_PATH).loadIndex(),
-  saveIndex: (storePath, index) => getBackend(storePath || DEFAULT_STORE_PATH).saveIndex(index),
-  loadEmbeddings: (storePath) => getBackend(storePath || DEFAULT_STORE_PATH).loadEmbeddings(),
-  saveEmbeddings: (storePath, embeddings) => getBackend(storePath || DEFAULT_STORE_PATH).saveEmbeddings(embeddings),
-  loadConversationIndex: (storePath) => getBackend(storePath || DEFAULT_STORE_PATH).loadConversationIndex(),
-  saveConversationIndex: (storePath, convIndex) => getBackend(storePath || DEFAULT_STORE_PATH).saveConversationIndex(convIndex),
+  loadIndex: (storePath) => getBackend(storePath || resolveStorePath()).loadIndex(),
+  saveIndex: (storePath, index) => getBackend(storePath || resolveStorePath()).saveIndex(index),
+  loadEmbeddings: (storePath) => getBackend(storePath || resolveStorePath()).loadEmbeddings(),
+  saveEmbeddings: (storePath, embeddings) => getBackend(storePath || resolveStorePath()).saveEmbeddings(embeddings),
+  loadConversationIndex: (storePath) => getBackend(storePath || resolveStorePath()).loadConversationIndex(),
+  saveConversationIndex: (storePath, convIndex) => getBackend(storePath || resolveStorePath()).saveConversationIndex(convIndex),
 
   // Filtering
   isRepoExcluded,
@@ -2256,6 +2348,8 @@ module.exports = {
   DEFAULT_JOURNAL_DIR,
   DEFAULT_PROJECTS_DIR,
   DEFAULT_SIGNALS_DIR,
+  resolveStorePath,
+  resolveSignalsDir,
 
   // Digest feedback
   loadFeedback,

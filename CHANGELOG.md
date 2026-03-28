@@ -2,6 +2,16 @@
 
 All notable changes to Wayfind are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.0.40] - 2026-03-28
+
+### Added
+- **Per-team content store isolation** (#149): each team now gets its own content store at `~/.claude/team-context/teams/<teamId>/`. Single-team users are migrated automatically on first access — no manual action required.
+- **`resolveStorePath()` / `resolveSignalsDir()`**: new exported functions that resolve the correct store and signals paths for the active team. Team is determined from `.claude/wayfind.json` in the repo or `context.json` default. Any explicit `storePath` option passed by callers still takes priority.
+- **MCP server** (`wayfind-mcp`): stdio MCP server that exposes 8 tools — `search_context`, `get_entry`, `list_recent`, `get_signals`, `get_team_status`, `get_personas`, `record_feedback`, `add_context`. Any MCP-compatible AI tool (Claude Code, Cursor, etc.) can query your team's knowledge base directly.
+- **`wayfind deploy --team <teamId>`**: scaffold a per-team container config at `~/.claude/team-context/teams/<teamId>/deploy/` with per-team container name (`wayfind-<teamId>`), `com.wayfind.team` Docker label, and correct volume mounts.
+- **`wayfind deploy list`**: list all running Wayfind team containers discovered via `com.wayfind.team` Docker label.
+- **Multi-container `wayfind update`**: discovers and updates all `com.wayfind.team`-labeled containers automatically.
+
 ## [2.0.39] - 2026-03-28
 
 ### Added

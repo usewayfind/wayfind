@@ -1109,7 +1109,7 @@ function parseCSArgs(args) {
 async function runIndexJournals(args) {
   const { opts } = parseCSArgs(args);
   const journalDir = opts.dir || contentStore.DEFAULT_JOURNAL_DIR;
-  const storePath = opts.store || contentStore.DEFAULT_STORE_PATH;
+  const storePath = opts.store || contentStore.resolveStorePath();
 
   console.log(`Indexing journals from: ${journalDir}`);
   console.log(`Store: ${storePath}`);
@@ -1137,7 +1137,7 @@ async function runIndexJournals(args) {
 async function runIndexConversations(args) {
   const { opts } = parseCSArgs(args);
   const projectsDir = opts.dir || contentStore.DEFAULT_PROJECTS_DIR;
-  const storePath = opts.store || contentStore.DEFAULT_STORE_PATH;
+  const storePath = opts.store || contentStore.resolveStorePath();
 
   console.log(`Indexing conversations from: ${projectsDir}`);
   console.log(`Store: ${storePath}`);
@@ -1322,7 +1322,7 @@ function buildRepoToTeamResolver() {
 async function runIndexConversationsWithExport(args, detectShifts = false) {
   const { opts } = parseCSArgs(args);
   const projectsDir = opts.dir || contentStore.DEFAULT_PROJECTS_DIR;
-  const storePath = opts.store || contentStore.DEFAULT_STORE_PATH;
+  const storePath = opts.store || contentStore.resolveStorePath();
   const journalDir = opts.exportDir || contentStore.DEFAULT_JOURNAL_DIR;
 
   console.log(`Indexing conversations from: ${projectsDir}`);
@@ -2973,7 +2973,7 @@ async function runBot(args) {
 
   // Check content store has entries (warn if empty)
   const index = contentStore.loadIndex(
-    config.slack_bot.store_path || contentStore.DEFAULT_STORE_PATH
+    config.slack_bot.store_path || contentStore.resolveStorePath()
   );
   if (!index || index.entryCount === 0) {
     console.log('Warning: Content store is empty. Run "wayfind index-journals" first for best results.');
@@ -3753,18 +3753,166 @@ function runPrompts(args) {
 const DEPLOY_TEMPLATES_DIR = path.join(ROOT, 'templates', 'deploy');
 
 async function runDeploy(args) {
-  const sub = args[0] || 'init';
+  // Parse --team <teamId> flag
+  const teamIdx = args.indexOf('--team');
+  const teamId = teamIdx !== -1 ? args[teamIdx + 1] : null;
+  const portIdx = args.indexOf('--port');
+  const port = portIdx !== -1 ? parseInt(args[portIdx + 1], 10) : null;
+
+  const filteredArgs = args.filter((a, i) => {
+    if (a === '--team' || a === '--port') return false;
+    if (i > 0 && (args[i - 1] === '--team' || args[i - 1] === '--port')) return false;
+    return true;
+  });
+  const sub = filteredArgs[0] || 'init';
+
   switch (sub) {
     case 'init':
-      deployInit();
+      if (teamId) {
+        deployTeamInit(teamId, { port });
+      } else {
+        deployInit();
+      }
+      break;
+    case 'list':
+      deployList();
       break;
     case 'status':
       deployStatus();
       break;
     default:
       console.error(`Unknown deploy subcommand: ${sub}`);
-      console.error('Available: init, status');
+      console.error('Available: init [--team <id>], list, status');
       process.exit(1);
+  }
+}
+
+/**
+ * Scaffold a per-team container config at ~/.claude/team-context/teams/<teamId>/deploy/
+ */
+function deployTeamInit(teamId, { port } = {}) {
+  const teamsBaseDir = HOME ? path.join(HOME, '.claude', 'team-context', 'teams') : null;
+  if (!teamsBaseDir) {
+    console.error('Cannot resolve home directory.');
+    process.exit(1);
+  }
+
+  const deployDir = path.join(teamsBaseDir, teamId, 'deploy');
+  const storeDir = path.join(teamsBaseDir, teamId, 'content-store');
+
+  // Check for duplicate running container
+  const psResult = spawnSync('docker', ['ps', '--filter', `label=com.wayfind.team=${teamId}`, '--format', '{{.Names}}'], { stdio: 'pipe' });
+  const running = (psResult.stdout || '').toString().trim();
+  if (running) {
+    console.log(`Warning: container already running for team "${teamId}": ${running}`);
+    console.log('Use "docker compose down" in the deploy directory before re-initializing.');
+    process.exit(1);
+  }
+
+  fs.mkdirSync(deployDir, { recursive: true });
+  fs.mkdirSync(storeDir, { recursive: true });
+  console.log(`Scaffolding deploy config for team: ${teamId}`);
+  console.log(`Deploy dir: ${deployDir}`);
+
+  // Resolve team-context repo path for volume mount
+  const config = readContextConfig();
+  const teamEntry = config.teams && config.teams[teamId];
+  const teamContextPath = teamEntry ? teamEntry.path : null;
+
+  // Assign port (default 3141; if taken, user should pass --port)
+  const assignedPort = port || 3141;
+  const containerName = `wayfind-${teamId}`;
+
+  // Build docker-compose.yml content with per-team overrides
+  const templatePath = path.join(DEPLOY_TEMPLATES_DIR, 'docker-compose.yml');
+  let composeContent = fs.readFileSync(templatePath, 'utf8');
+  composeContent = composeContent
+    .replace(/container_name: wayfind/, `container_name: ${containerName}`)
+    .replace(/- "3141:3141"/, `- "${assignedPort}:3141"`)
+    .replace(/(TEAM_CONTEXT_TENANT_ID:.*$)/m, `TEAM_CONTEXT_TENANT_ID: \${TEAM_CONTEXT_TENANT_ID:-${teamId}}`);
+
+  // Inject Docker label for discovery
+  composeContent = composeContent.replace(
+    /restart: unless-stopped/,
+    `restart: unless-stopped\n    labels:\n      com.wayfind.team: "${teamId}"`
+  );
+
+  const composePath = path.join(deployDir, 'docker-compose.yml');
+  if (!fs.existsSync(composePath)) {
+    fs.writeFileSync(composePath, composeContent, 'utf8');
+    console.log('  docker-compose.yml — created');
+  } else {
+    console.log('  docker-compose.yml — already exists, skipping');
+  }
+
+  // .env.example
+  const envExampleSrc = path.join(DEPLOY_TEMPLATES_DIR, '.env.example');
+  const envExampleDst = path.join(deployDir, '.env.example');
+  if (!fs.existsSync(envExampleDst) && fs.existsSync(envExampleSrc)) {
+    let envContent = fs.readFileSync(envExampleSrc, 'utf8');
+    if (teamContextPath) {
+      envContent += `\nTEAM_CONTEXT_TEAM_CONTEXT_PATH=${teamContextPath}\n`;
+    }
+    fs.writeFileSync(envExampleDst, envContent, 'utf8');
+    console.log('  .env.example — created');
+  }
+
+  // .env from .env.example
+  const envPath = path.join(deployDir, '.env');
+  if (!fs.existsSync(envPath) && fs.existsSync(envExampleDst)) {
+    fs.copyFileSync(envExampleDst, envPath);
+    console.log('  .env — created from .env.example (fill in your tokens)');
+  }
+
+  const ghToken = detectGitHubToken();
+  if (ghToken && fs.existsSync(envPath)) {
+    let envContent = fs.readFileSync(envPath, 'utf8');
+    if (!envContent.match(/^GITHUB_TOKEN=.+/m)) {
+      envContent = envContent.replace(/^GITHUB_TOKEN=.*$/m, `GITHUB_TOKEN=${ghToken}`);
+      if (!envContent.includes('GITHUB_TOKEN=')) envContent += `\nGITHUB_TOKEN=${ghToken}\n`;
+      fs.writeFileSync(envPath, envContent, 'utf8');
+      console.log('  GITHUB_TOKEN — auto-detected from gh CLI');
+    }
+  }
+
+  console.log('');
+  console.log('Next steps:');
+  console.log(`  1. Fill in ${deployDir}/.env with your tokens`);
+  console.log(`  2. cd "${deployDir}" && docker compose up -d`);
+  console.log(`  3. Verify: curl http://localhost:${assignedPort}/healthz`);
+  console.log('');
+  console.log(`Tip: run "wayfind deploy list" to see all running team containers.`);
+
+  telemetry.capture('deploy_team_init', { teamId }, CLI_USER);
+}
+
+/**
+ * List all running Wayfind team containers.
+ */
+function deployList() {
+  const psResult = spawnSync('docker', [
+    'ps',
+    '--filter', 'label=com.wayfind.team',
+    '--format', '{{.Names}}\t{{.Status}}\t{{.Label "com.wayfind.team"}}',
+  ], { stdio: 'pipe' });
+
+  if (psResult.error) {
+    console.log('Docker not available.');
+    return;
+  }
+
+  const rows = (psResult.stdout || '').toString().trim();
+  if (!rows) {
+    console.log('No Wayfind team containers running.');
+    console.log('Start one with: wayfind deploy --team <teamId> && cd ~/.claude/team-context/teams/<teamId>/deploy && docker compose up -d');
+    return;
+  }
+
+  console.log('Running Wayfind team containers:');
+  console.log('');
+  for (const row of rows.split('\n')) {
+    const [name, status, team] = row.split('\t');
+    console.log(`  ${name} (team: ${team || 'unknown'}) — ${status}`);
   }
 }
 
@@ -3962,7 +4110,7 @@ function startHealthServer() {
   const server = http.createServer((req, res) => {
     if (req.url === '/healthz' && req.method === 'GET') {
       // Enrich with index freshness
-      const storePath = process.env.TEAM_CONTEXT_STORE_PATH || contentStore.DEFAULT_STORE_PATH;
+      const storePath = contentStore.resolveStorePath();
       const index = contentStore.loadIndex(storePath);
       const indexInfo = index ? {
         entryCount: index.entryCount || 0,
@@ -4240,7 +4388,7 @@ async function indexConversationsIfAvailable() {
 }
 
 async function indexSignalsIfAvailable() {
-  const signalsDir = process.env.TEAM_CONTEXT_SIGNALS_DIR || contentStore.DEFAULT_SIGNALS_DIR;
+  const signalsDir = contentStore.resolveSignalsDir();
   if (!signalsDir || !fs.existsSync(signalsDir)) {
     console.log(`No signals at ${signalsDir} — skipping index.`);
     return;
@@ -4310,9 +4458,9 @@ function ensureContainerConfig() {
         api_key_env: 'ANTHROPIC_API_KEY',
       },
       lookback_days: 7,
-      store_path: process.env.TEAM_CONTEXT_STORE_PATH || contentStore.DEFAULT_STORE_PATH,
+      store_path: contentStore.resolveStorePath(),
       journal_dir: process.env.TEAM_CONTEXT_JOURNALS_DIR || '/data/journals',
-      signals_dir: process.env.TEAM_CONTEXT_SIGNALS_DIR || contentStore.DEFAULT_SIGNALS_DIR,
+      signals_dir: contentStore.resolveSignalsDir(),
       team_context_dir: process.env.TEAM_CONTEXT_TEAM_CONTEXT_DIR || '',
       slack: {
         webhook_url: process.env.TEAM_CONTEXT_SLACK_WEBHOOK || '',
@@ -4326,9 +4474,9 @@ function ensureContainerConfig() {
   // may have host paths that don't exist inside the container
   if (config.digest) {
     const containerPaths = {
-      store_path: process.env.TEAM_CONTEXT_STORE_PATH || contentStore.DEFAULT_STORE_PATH,
+      store_path: contentStore.resolveStorePath(),
       journal_dir: process.env.TEAM_CONTEXT_JOURNALS_DIR || '/data/journals',
-      signals_dir: process.env.TEAM_CONTEXT_SIGNALS_DIR || contentStore.DEFAULT_SIGNALS_DIR,
+      signals_dir: contentStore.resolveSignalsDir(),
       team_context_dir: process.env.TEAM_CONTEXT_TEAM_CONTEXT_DIR || '',
     };
     for (const [key, val] of Object.entries(containerPaths)) {
@@ -4345,7 +4493,7 @@ function ensureContainerConfig() {
       bot_token_env: 'SLACK_BOT_TOKEN',
       app_token_env: 'SLACK_APP_TOKEN',
       mode: process.env.TEAM_CONTEXT_BOT_MODE || 'local',
-      store_path: process.env.TEAM_CONTEXT_STORE_PATH || contentStore.DEFAULT_STORE_PATH,
+      store_path: contentStore.resolveStorePath(),
       journal_dir: process.env.TEAM_CONTEXT_JOURNALS_DIR || '/data/journals',
       llm: {
         provider: 'anthropic',
@@ -4359,7 +4507,7 @@ function ensureContainerConfig() {
   // Override container-specific paths in bot config (same reason as digest above)
   if (config.slack_bot) {
     const botPaths = {
-      store_path: process.env.TEAM_CONTEXT_STORE_PATH || contentStore.DEFAULT_STORE_PATH,
+      store_path: contentStore.resolveStorePath(),
       journal_dir: process.env.TEAM_CONTEXT_JOURNALS_DIR || '/data/journals',
     };
     for (const [key, val] of Object.entries(botPaths)) {
@@ -4438,7 +4586,7 @@ function buildBotConfigFromEnv() {
     bot_token_env: 'SLACK_BOT_TOKEN',
     app_token_env: 'SLACK_APP_TOKEN',
     mode: process.env.TEAM_CONTEXT_BOT_MODE || 'local',
-    store_path: process.env.TEAM_CONTEXT_STORE_PATH || contentStore.DEFAULT_STORE_PATH,
+    store_path: contentStore.resolveStorePath(),
     journal_dir: process.env.TEAM_CONTEXT_JOURNALS_DIR || '/data/journals',
     llm: {
       provider: 'anthropic',
@@ -4929,64 +5077,92 @@ const COMMANDS = {
         process.exit(result.status);
       }
 
-      // Step 3: Update Wayfind container if one is running
+      // Step 3: Update all Wayfind containers (per-team labeled + legacy 'wayfind')
       const dockerCheck = spawnSync('docker', ['compose', 'version'], { stdio: 'pipe' });
       if (!dockerCheck.error && dockerCheck.status === 0) {
-        const psResult = spawnSync('docker', ['ps', '--filter', 'name=wayfind', '--format', '{{.Names}}'], { stdio: 'pipe' });
-        const containers = (psResult.stdout || '').toString().trim();
-        if (containers && containers.split('\n').some(c => c === 'wayfind')) {
-          console.log('\nWayfind container detected — pulling latest image...');
+        // Discover containers: prefer com.wayfind.team label, fall back to legacy 'wayfind' name
+        const labeledResult = spawnSync('docker', [
+          'ps',
+          '--filter', 'label=com.wayfind.team',
+          '--format', '{{.Names}}\t{{index .Labels "com.wayfind.team"}}',
+        ], { stdio: 'pipe' });
+        const legacyResult = spawnSync('docker', ['ps', '--filter', 'name=^wayfind$', '--format', '{{.Names}}\t'], { stdio: 'pipe' });
 
-          // Find compose file directory: check container labels, then known paths
-          let composeDir = '';
-          const inspectResult = spawnSync('docker', ['inspect', 'wayfind', '--format', '{{index .Config.Labels "com.docker.compose.project.working_dir"}}'], { stdio: 'pipe' });
-          const labelDir = (inspectResult.stdout || '').toString().trim();
-          if (labelDir && fs.existsSync(path.join(labelDir, 'docker-compose.yml'))) {
-            composeDir = labelDir;
-          } else {
-            const teamCtx = process.env.TEAM_CONTEXT_TEAM_CONTEXT_DIR || '';
-            const candidates = [
-              teamCtx ? path.join(teamCtx, 'deploy') : '',
-              process.cwd(),
-              path.join(HOME, 'team-context', 'deploy'),
-            ].filter(Boolean);
-            for (const dir of candidates) {
-              if (fs.existsSync(path.join(dir, 'docker-compose.yml'))) {
-                composeDir = dir;
-                break;
+        const containerRows = [
+          ...(labeledResult.stdout || '').toString().trim().split('\n').filter(Boolean),
+          ...(legacyResult.stdout || '').toString().trim().split('\n').filter(Boolean),
+        ];
+
+        if (containerRows.length > 0) {
+          console.log(`\nWayfind container(s) detected — updating ${containerRows.length} container(s)...`);
+
+          for (const row of containerRows) {
+            const [containerName] = row.split('\t');
+            if (!containerName) continue;
+
+            // Find compose dir via docker label
+            const inspectResult = spawnSync('docker', [
+              'inspect', containerName,
+              '--format', '{{index .Config.Labels "com.docker.compose.project.working_dir"}}',
+            ], { stdio: 'pipe' });
+            const labelDir = (inspectResult.stdout || '').toString().trim();
+
+            let composeDir = '';
+            if (labelDir && fs.existsSync(path.join(labelDir, 'docker-compose.yml'))) {
+              composeDir = labelDir;
+            } else {
+              // For per-team containers, check teams dir
+              const teamsBase = HOME ? path.join(HOME, '.claude', 'team-context', 'teams') : '';
+              if (teamsBase && fs.existsSync(teamsBase)) {
+                for (const tid of fs.readdirSync(teamsBase)) {
+                  const candidate = path.join(teamsBase, tid, 'deploy');
+                  if (fs.existsSync(path.join(candidate, 'docker-compose.yml'))) {
+                    // Check if this compose file manages this container
+                    const checkResult = spawnSync('docker', ['compose', 'ps', '--format', '{{.Name}}'], { cwd: candidate, stdio: 'pipe' });
+                    const composeContainers = (checkResult.stdout || '').toString();
+                    if (composeContainers.includes(containerName)) {
+                      composeDir = candidate;
+                      break;
+                    }
+                  }
+                }
+              }
+              // Legacy fallback
+              if (!composeDir) {
+                const legacyCandidates = [process.cwd(), path.join(HOME || '', 'team-context', 'deploy')];
+                for (const dir of legacyCandidates) {
+                  if (dir && fs.existsSync(path.join(dir, 'docker-compose.yml'))) {
+                    composeDir = dir;
+                    break;
+                  }
+                }
               }
             }
-          }
 
-          if (composeDir) {
-            console.log(`Using compose file in: ${composeDir}`);
-            const pullResult = spawnSync('docker', ['compose', 'pull'], { cwd: composeDir, stdio: 'inherit' });
-            if (!pullResult.error && pullResult.status === 0) {
-              console.log('Recreating container with new image...');
-              spawnSync('docker', ['compose', 'up', '-d'], { cwd: composeDir, stdio: 'inherit' });
-              console.log('Container updated.');
+            if (composeDir) {
+              console.log(`\nUpdating ${containerName} (compose: ${composeDir})...`);
+              const pullResult = spawnSync('docker', ['compose', 'pull'], { cwd: composeDir, stdio: 'inherit' });
+              if (!pullResult.error && pullResult.status === 0) {
+                spawnSync('docker', ['compose', 'up', '-d'], { cwd: composeDir, stdio: 'inherit' });
+                console.log(`${containerName} updated.`);
 
-              // Post-deploy smoke check: scan container logs for warnings/errors
-              console.log('\nRunning post-deploy smoke check (waiting 5s for container startup)...');
-              spawnSync('sleep', ['5']);
-              const logsResult = spawnSync('docker', ['logs', '--tail', '50', 'wayfind'], { stdio: 'pipe' });
-              const logOutput = (logsResult.stdout || '').toString() + (logsResult.stderr || '').toString();
-              const warningPatterns = /Warning:|Error:|failed|fallback/i;
-              const logLines = logOutput.split('\n').filter(l => l.trim());
-              const warnings = logLines.filter(l => warningPatterns.test(l));
-              if (warnings.length > 0) {
-                console.log('');
-                warnings.forEach(w => console.log(`  \u26A0 ${w.trim()}`));
-                console.log('\n  Post-deploy warnings detected \u2014 review above');
+                // Post-deploy smoke check
+                spawnSync('sleep', ['5']);
+                const logsResult = spawnSync('docker', ['logs', '--tail', '50', containerName], { stdio: 'pipe' });
+                const logOutput = (logsResult.stdout || '').toString() + (logsResult.stderr || '').toString();
+                const warnings = logOutput.split('\n').filter(l => /Warning:|Error:|failed|fallback/i.test(l) && l.trim());
+                if (warnings.length > 0) {
+                  warnings.forEach(w => console.log(`  \u26A0 ${w.trim()}`));
+                  console.log('  Post-deploy warnings detected — review above');
+                } else {
+                  console.log('  Post-deploy check: no warnings');
+                }
               } else {
-                console.log('  Post-deploy check: no warnings');
+                console.error(`Docker pull failed for ${containerName}.`);
               }
             } else {
-              console.error('Docker pull failed — container not updated.');
+              console.log(`Could not locate docker-compose.yml for ${containerName}. Update manually.`);
             }
-          } else {
-            console.log('Could not locate docker-compose.yml for the Wayfind container.');
-            console.log('Run "docker compose pull && docker compose up -d" manually in your deploy directory.');
           }
         }
       }

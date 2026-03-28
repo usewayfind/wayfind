@@ -1,9 +1,10 @@
 {
   "name": "wayfind",
-  "version": "2.0.39",
+  "version": "2.0.40",
   "description": "Team decision trail for AI-assisted development. The connective tissue between product, engineering, and strategy.",
   "bin": {
-    "wayfind": "./bin/team-context.js"
+    "wayfind": "./bin/team-context.js",
+    "wayfind-mcp": "./bin/mcp-server.js"
   },
   "keywords": [
     "ai",
@@ -48,6 +49,7 @@
     "node": ">=16"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.28.0",
     "@slack/bolt": "^4.6.0",
     "posthog-node": "^5.28.0"
   },

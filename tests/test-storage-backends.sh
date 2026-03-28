@@ -559,6 +559,272 @@ else
     _fail "all signal entries have source:'signal'" "Got: $RESULT"
 fi
 
+# ── 8. SQLite schema migration (pre-v2.0.29) ───────────────────────────────
+
+echo ""
+echo "8. SQLite schema migration (pre-v2.0.29)"
+echo "=========================================="
+
+if [ "$SQLITE_AVAILABLE" = "true" ]; then
+
+MIGRATE_STORE="$TEST_HOME/migrate-schema-store"
+mkdir -p "$MIGRATE_STORE"
+
+echo ""
+echo "Test: migration adds columns and indexes to pre-v2.0.29 database"
+RESULT=$(node -e "
+  const Database = require('better-sqlite3');
+  const path = require('path');
+  const fs = require('fs');
+
+  const storePath = '$MIGRATE_STORE';
+  const dbPath = path.join(storePath, 'content-store.db');
+
+  // 1. Create a database with the OLD schema (no quality_score, distill_tier,
+  //    distilled_from, distilled_at columns — mimics pre-v2.0.29).
+  const db = new Database(dbPath);
+  db.pragma('journal_mode = WAL');
+  db.exec(\`
+    CREATE TABLE IF NOT EXISTS metadata (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS decisions (
+      id TEXT PRIMARY KEY,
+      date TEXT NOT NULL,
+      repo TEXT NOT NULL,
+      title TEXT NOT NULL,
+      source TEXT DEFAULT 'journal',
+      user TEXT DEFAULT '',
+      drifted INTEGER DEFAULT 0,
+      content_hash TEXT NOT NULL,
+      content_length INTEGER DEFAULT 0,
+      tags TEXT DEFAULT '[]',
+      has_embedding INTEGER DEFAULT 0,
+      has_reasoning INTEGER DEFAULT 0,
+      has_alternatives INTEGER DEFAULT 0,
+      created_at INTEGER,
+      updated_at INTEGER
+    );
+    CREATE INDEX IF NOT EXISTS idx_decisions_date ON decisions(date);
+    CREATE INDEX IF NOT EXISTS idx_decisions_repo ON decisions(repo);
+    CREATE INDEX IF NOT EXISTS idx_decisions_source ON decisions(source);
+    CREATE INDEX IF NOT EXISTS idx_decisions_user ON decisions(user);
+    INSERT INTO metadata (key, value) VALUES ('schema_version', '1');
+  \`);
+
+  // 2. Insert rows into the old-schema decisions table.
+  const now = Date.now();
+  db.prepare(\`
+    INSERT INTO decisions (id, date, repo, title, source, user, drifted,
+      content_hash, content_length, tags, has_embedding, has_reasoning,
+      has_alternatives, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  \`).run('dec-001', '2026-01-15', 'my-repo', 'Use Redis for caching', 'journal', 'alice', 0,
+    'abc123', 42, '[\"caching\"]', 0, 1, 0, now, now);
+  db.prepare(\`
+    INSERT INTO decisions (id, date, repo, title, source, user, drifted,
+      content_hash, content_length, tags, has_embedding, has_reasoning,
+      has_alternatives, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  \`).run('dec-002', '2026-01-16', 'my-repo', 'Switch to TypeScript', 'conversation', 'bob', 1,
+    'def456', 88, '[\"typescript\",\"migration\"]', 1, 0, 1, now, now);
+  db.prepare(\`
+    INSERT INTO decisions (id, date, repo, title, source, user, drifted,
+      content_hash, content_length, tags, has_embedding, has_reasoning,
+      has_alternatives, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  \`).run('dec-003', '2026-01-17', 'other-repo', 'Add rate limiting', 'journal', 'alice', 0,
+    'ghi789', 55, '[]', 0, 0, 0, now, now);
+
+  // Verify old schema lacks the new columns.
+  const colsBefore = db.prepare('PRAGMA table_info(decisions)').all().map(c => c.name);
+  const missingBefore = !colsBefore.includes('quality_score')
+    && !colsBefore.includes('distill_tier')
+    && !colsBefore.includes('distilled_from')
+    && !colsBefore.includes('distilled_at');
+  console.log('MISSING_BEFORE:' + missingBefore);
+
+  db.close();
+
+  // 3. Open via SqliteBackend — this should trigger migration.
+  const SqliteBackend = require('$REPO_ROOT/bin/storage/sqlite-backend');
+  const backend = new SqliteBackend(storePath);
+  backend.open();
+
+  // 4. Verify the new columns exist.
+  const colsAfter = backend.db.prepare('PRAGMA table_info(decisions)').all().map(c => c.name);
+  console.log('HAS_QUALITY_SCORE:' + colsAfter.includes('quality_score'));
+  console.log('HAS_DISTILL_TIER:' + colsAfter.includes('distill_tier'));
+  console.log('HAS_DISTILLED_FROM:' + colsAfter.includes('distilled_from'));
+  console.log('HAS_DISTILLED_AT:' + colsAfter.includes('distilled_at'));
+
+  // 5. Verify existing data is intact.
+  const rows = backend.db.prepare('SELECT * FROM decisions ORDER BY id').all();
+  console.log('ROW_COUNT:' + rows.length);
+
+  const r1 = rows.find(r => r.id === 'dec-001');
+  const r2 = rows.find(r => r.id === 'dec-002');
+  const r3 = rows.find(r => r.id === 'dec-003');
+  console.log('R1_TITLE:' + (r1 ? r1.title : 'MISSING'));
+  console.log('R1_HASH:' + (r1 ? r1.content_hash : 'MISSING'));
+  console.log('R1_REASONING:' + (r1 ? r1.has_reasoning : 'MISSING'));
+  console.log('R2_TITLE:' + (r2 ? r2.title : 'MISSING'));
+  console.log('R2_DRIFTED:' + (r2 ? r2.drifted : 'MISSING'));
+  console.log('R2_TAGS:' + (r2 ? r2.tags : 'MISSING'));
+  console.log('R3_REPO:' + (r3 ? r3.repo : 'MISSING'));
+
+  // Verify new columns have correct defaults on old rows.
+  console.log('R1_QUALITY:' + (r1 ? r1.quality_score : 'MISSING'));
+  console.log('R1_TIER:' + (r1 ? r1.distill_tier : 'MISSING'));
+  console.log('R1_FROM:' + (r1 ? r1.distilled_from : 'MISSING'));
+  console.log('R1_AT:' + (r1 ? r1.distilled_at : 'MISSING'));
+
+  // 6. Verify indexes were created.
+  const indexes = backend.db.prepare(\"SELECT name FROM sqlite_master WHERE type='index'\").all().map(r => r.name);
+  console.log('HAS_IDX_QUALITY:' + indexes.includes('idx_decisions_quality'));
+  console.log('HAS_IDX_TIER:' + indexes.includes('idx_decisions_tier'));
+
+  // Verify loadIndex round-trip works on migrated DB.
+  const index = backend.loadIndex();
+  console.log('LOAD_COUNT:' + index.entryCount);
+  const entry1 = index.entries['dec-001'];
+  console.log('ENTRY1_TITLE:' + (entry1 ? entry1.title : 'MISSING'));
+  console.log('ENTRY1_QUALITY:' + (entry1 ? entry1.qualityScore : 'MISSING'));
+  console.log('ENTRY1_TIER:' + (entry1 ? entry1.distillTier : 'MISSING'));
+
+  backend.close();
+")
+
+# Column existence checks
+if echo "$RESULT" | grep -qF "MISSING_BEFORE:true"; then
+    _pass "old schema lacks new columns before migration"
+else
+    _fail "old schema lacks new columns before migration" "Got: $RESULT"
+fi
+if echo "$RESULT" | grep -qF "HAS_QUALITY_SCORE:true"; then
+    _pass "migration adds quality_score column"
+else
+    _fail "migration adds quality_score column" "Got: $RESULT"
+fi
+if echo "$RESULT" | grep -qF "HAS_DISTILL_TIER:true"; then
+    _pass "migration adds distill_tier column"
+else
+    _fail "migration adds distill_tier column" "Got: $RESULT"
+fi
+if echo "$RESULT" | grep -qF "HAS_DISTILLED_FROM:true"; then
+    _pass "migration adds distilled_from column"
+else
+    _fail "migration adds distilled_from column" "Got: $RESULT"
+fi
+if echo "$RESULT" | grep -qF "HAS_DISTILLED_AT:true"; then
+    _pass "migration adds distilled_at column"
+else
+    _fail "migration adds distilled_at column" "Got: $RESULT"
+fi
+
+# Data integrity checks
+if echo "$RESULT" | grep -qF "ROW_COUNT:3"; then
+    _pass "all 3 rows survived migration"
+else
+    _fail "all 3 rows survived migration" "Got: $RESULT"
+fi
+if echo "$RESULT" | grep -qF "R1_TITLE:Use Redis for caching"; then
+    _pass "row 1 title intact"
+else
+    _fail "row 1 title intact" "Got: $RESULT"
+fi
+if echo "$RESULT" | grep -qF "R1_HASH:abc123"; then
+    _pass "row 1 content_hash intact"
+else
+    _fail "row 1 content_hash intact" "Got: $RESULT"
+fi
+if echo "$RESULT" | grep -qF "R1_REASONING:1"; then
+    _pass "row 1 has_reasoning intact"
+else
+    _fail "row 1 has_reasoning intact" "Got: $RESULT"
+fi
+if echo "$RESULT" | grep -qF "R2_TITLE:Switch to TypeScript"; then
+    _pass "row 2 title intact"
+else
+    _fail "row 2 title intact" "Got: $RESULT"
+fi
+if echo "$RESULT" | grep -qF "R2_DRIFTED:1"; then
+    _pass "row 2 drifted flag intact"
+else
+    _fail "row 2 drifted flag intact" "Got: $RESULT"
+fi
+if echo "$RESULT" | grep -qF 'R2_TAGS:["typescript","migration"]'; then
+    _pass "row 2 tags intact"
+else
+    _fail "row 2 tags intact" "Got: $RESULT"
+fi
+if echo "$RESULT" | grep -qF "R3_REPO:other-repo"; then
+    _pass "row 3 repo intact"
+else
+    _fail "row 3 repo intact" "Got: $RESULT"
+fi
+
+# New column defaults on old rows
+if echo "$RESULT" | grep -qF "R1_QUALITY:0"; then
+    _pass "quality_score defaults to 0"
+else
+    _fail "quality_score defaults to 0" "Got: $RESULT"
+fi
+if echo "$RESULT" | grep -qF "R1_TIER:raw"; then
+    _pass "distill_tier defaults to 'raw'"
+else
+    _fail "distill_tier defaults to 'raw'" "Got: $RESULT"
+fi
+if echo "$RESULT" | grep -qF "R1_FROM:null"; then
+    _pass "distilled_from defaults to null"
+else
+    _fail "distilled_from defaults to null" "Got: $RESULT"
+fi
+if echo "$RESULT" | grep -qF "R1_AT:null"; then
+    _pass "distilled_at defaults to null"
+else
+    _fail "distilled_at defaults to null" "Got: $RESULT"
+fi
+
+# Index checks
+if echo "$RESULT" | grep -qF "HAS_IDX_QUALITY:true"; then
+    _pass "idx_decisions_quality index created"
+else
+    _fail "idx_decisions_quality index created" "Got: $RESULT"
+fi
+if echo "$RESULT" | grep -qF "HAS_IDX_TIER:true"; then
+    _pass "idx_decisions_tier index created"
+else
+    _fail "idx_decisions_tier index created" "Got: $RESULT"
+fi
+
+# loadIndex round-trip
+if echo "$RESULT" | grep -qF "LOAD_COUNT:3"; then
+    _pass "loadIndex returns 3 entries after migration"
+else
+    _fail "loadIndex returns 3 entries after migration" "Got: $RESULT"
+fi
+if echo "$RESULT" | grep -qF "ENTRY1_TITLE:Use Redis for caching"; then
+    _pass "loadIndex entry title correct after migration"
+else
+    _fail "loadIndex entry title correct after migration" "Got: $RESULT"
+fi
+if echo "$RESULT" | grep -qF "ENTRY1_QUALITY:0"; then
+    _pass "loadIndex entry qualityScore correct after migration"
+else
+    _fail "loadIndex entry qualityScore correct after migration" "Got: $RESULT"
+fi
+if echo "$RESULT" | grep -qF "ENTRY1_TIER:raw"; then
+    _pass "loadIndex entry distillTier correct after migration"
+else
+    _fail "loadIndex entry distillTier correct after migration" "Got: $RESULT"
+fi
+
+else
+    echo "  (skipping schema migration tests — better-sqlite3 not installed)"
+fi
+
 # ── Summary ──────────────────────────────────────────────────────────────────
 
 echo ""

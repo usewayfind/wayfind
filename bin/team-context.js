@@ -4664,6 +4664,194 @@ function runCheckVersion() {
   }, CLI_USER);
 }
 
+// ── Container doctor ────────────────────────────────────────────────────────
+
+/**
+ * Detect if we're running inside a Docker container.
+ */
+function isRunningInContainer() {
+  try {
+    return fs.existsSync('/.dockerenv');
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Container-specific health checks. Prints PASS/WARN lines and exits with
+ * appropriate code. Useful as a post-startup self-check or via
+ * `docker exec wayfind npx wayfind doctor --container`.
+ */
+async function runContainerDoctor() {
+  const GREEN = '\x1b[32m', YELLOW = '\x1b[33m', RED = '\x1b[31m', RESET = '\x1b[0m';
+  const pass = (msg) => console.log(`${GREEN}PASS${RESET}  ${msg}`);
+  const warn = (msg) => console.log(`${YELLOW}WARN${RESET}  ${msg}`);
+  let issues = 0;
+
+  console.log('');
+  console.log('Wayfind — Container Doctor');
+  console.log('══════════════════════════════');
+
+  // 1. Backend type — is SQLite active or JSON fallback?
+  const storePath = path.join(EFFECTIVE_DIR, 'content-store');
+  try {
+    const storage = require('./storage/index.js');
+    storage.getBackend(storePath);
+    const info = storage.getBackendInfo(storePath);
+    if (!info) {
+      warn('Storage backend: not initialized');
+      issues++;
+    } else if (info.type === 'sqlite' && !info.fallback) {
+      pass(`Storage backend: sqlite`);
+    } else if (info.type === 'json' && info.fallback) {
+      warn('Storage backend: JSON (fallback — SQLite failed to load)');
+      console.log('       Install better-sqlite3 or rebuild the container image');
+      issues++;
+    } else if (info.type === 'json') {
+      warn('Storage backend: JSON (not SQLite)');
+      issues++;
+    } else {
+      pass(`Storage backend: ${info.type}`);
+    }
+  } catch (e) {
+    warn(`Storage backend: error — ${e.message}`);
+    issues++;
+  }
+
+  // 2. Entry count — are there entries in the content store?
+  let entryCount = 0;
+  try {
+    const storage = require('./storage/index.js');
+    const backend = storage.getBackend(storePath);
+    const idx = backend.loadIndex();
+    if (idx && idx.entries) {
+      entryCount = Object.keys(idx.entries).length;
+    }
+    if (entryCount > 0) {
+      pass(`Content store: ${entryCount} entries`);
+    } else {
+      warn('Content store: 0 entries — no signals have been indexed');
+      console.log('       Run: wayfind pull --all');
+      issues++;
+    }
+  } catch (e) {
+    warn(`Content store: error — ${e.message}`);
+    issues++;
+  }
+
+  // 3. Embedding coverage — what % of entries have embeddings?
+  if (entryCount > 0) {
+    try {
+      const storage = require('./storage/index.js');
+      const backend = storage.getBackend(storePath);
+      const idx = backend.loadIndex();
+      let total = 0, embedded = 0;
+      if (idx && idx.entries) {
+        for (const e of Object.values(idx.entries)) {
+          total++;
+          if (e.hasEmbedding) embedded++;
+        }
+      }
+      const pct = total > 0 ? Math.round(100 * embedded / total) : 0;
+      if (pct >= 50) {
+        pass(`Embedding coverage: ${embedded}/${total} (${pct}%)`);
+      } else {
+        warn(`Embedding coverage: ${embedded}/${total} (${pct}%) — search quality degraded`);
+        console.log('       Run: wayfind reindex');
+        issues++;
+      }
+    } catch (e) {
+      warn(`Embedding coverage: error — ${e.message}`);
+      issues++;
+    }
+  }
+
+  // 4. Signal freshness — are there signal files from today?
+  const signalsDir = path.join(EFFECTIVE_DIR, 'signals');
+  const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+  try {
+    if (!fs.existsSync(signalsDir)) {
+      warn('Signal freshness: no signals directory');
+      issues++;
+    } else {
+      const channels = fs.readdirSync(signalsDir).filter((f) => {
+        try { return fs.statSync(path.join(signalsDir, f)).isDirectory(); } catch { return false; }
+      });
+      if (channels.length === 0) {
+        warn('Signal freshness: no signal channels found');
+        issues++;
+      } else {
+        let freshCount = 0;
+        for (const ch of channels) {
+          const chDir = path.join(signalsDir, ch);
+          const files = fs.readdirSync(chDir).filter((f) => f.endsWith('.md')).sort().reverse();
+          const newest = files[0] || '';
+          // Signal files are named with date prefix, e.g. 2026-03-28-....md
+          if (newest.startsWith(today)) {
+            freshCount++;
+          }
+        }
+        if (freshCount === channels.length) {
+          pass(`Signal freshness: ${freshCount}/${channels.length} channels have signals from today`);
+        } else {
+          warn(`Signal freshness: ${freshCount}/${channels.length} channels have signals from today`);
+          console.log('       Run: wayfind pull --all');
+          issues++;
+        }
+      }
+    }
+  } catch (e) {
+    warn(`Signal freshness: error — ${e.message}`);
+    issues++;
+  }
+
+  // 5. Slack bot / health endpoint — is /healthz responding?
+  const healthPort = parseInt(process.env.TEAM_CONTEXT_HEALTH_PORT || '3141', 10);
+  try {
+    const healthResult = await new Promise((resolve) => {
+      const req = http.get(`http://localhost:${healthPort}/healthz`, { timeout: 3000 }, (res) => {
+        let body = '';
+        res.on('data', (chunk) => { body += chunk; });
+        res.on('end', () => resolve({ status: res.statusCode, body }));
+      });
+      req.on('error', (e) => resolve({ status: 0, error: e.message }));
+      req.on('timeout', () => { req.destroy(); resolve({ status: 0, error: 'timeout' }); });
+    });
+
+    if (healthResult.status === 200) {
+      let detail = '';
+      try {
+        const data = JSON.parse(healthResult.body);
+        if (data.slack && data.slack.connected) {
+          detail = ' (Slack connected)';
+        } else if (data.slack && !data.slack.connected) {
+          detail = ' (Slack disconnected)';
+        }
+      } catch { /* ignore parse errors */ }
+      pass(`Health endpoint: http://localhost:${healthPort}/healthz${detail}`);
+    } else if (healthResult.status > 0) {
+      warn(`Health endpoint: responded with ${healthResult.status}`);
+      issues++;
+    } else {
+      warn(`Health endpoint: not reachable — ${healthResult.error}`);
+      console.log('       Is the container running? Check: docker ps');
+      issues++;
+    }
+  } catch (e) {
+    warn(`Health endpoint: error — ${e.message}`);
+    issues++;
+  }
+
+  console.log('');
+  console.log('══════════════════════════════');
+  if (issues === 0) {
+    console.log(`${GREEN}All container checks passed${RESET}`);
+  } else {
+    console.log(`${YELLOW}${issues} issue(s) found${RESET}`);
+    process.exit(1);
+  }
+}
+
 // ── Command registry ────────────────────────────────────────────────────────
 
 const COMMANDS = {
@@ -4777,6 +4965,22 @@ const COMMANDS = {
               console.log('Recreating container with new image...');
               spawnSync('docker', ['compose', 'up', '-d'], { cwd: composeDir, stdio: 'inherit' });
               console.log('Container updated.');
+
+              // Post-deploy smoke check: scan container logs for warnings/errors
+              console.log('\nRunning post-deploy smoke check (waiting 5s for container startup)...');
+              spawnSync('sleep', ['5']);
+              const logsResult = spawnSync('docker', ['logs', '--tail', '50', 'wayfind'], { stdio: 'pipe' });
+              const logOutput = (logsResult.stdout || '').toString() + (logsResult.stderr || '').toString();
+              const warningPatterns = /Warning:|Error:|failed|fallback/i;
+              const logLines = logOutput.split('\n').filter(l => l.trim());
+              const warnings = logLines.filter(l => warningPatterns.test(l));
+              if (warnings.length > 0) {
+                console.log('');
+                warnings.forEach(w => console.log(`  \u26A0 ${w.trim()}`));
+                console.log('\n  Post-deploy warnings detected \u2014 review above');
+              } else {
+                console.log('  Post-deploy check: no warnings');
+              }
             } else {
               console.error('Docker pull failed — container not updated.');
             }
@@ -4829,9 +5033,13 @@ const COMMANDS = {
     run: (args) => runMigrateToPlugin(args),
   },
   doctor: {
-    desc: 'Check your Wayfind installation for issues',
+    desc: 'Check your Wayfind installation for issues (--container for container checks)',
     run: (args) => {
-      spawn('bash', [path.join(ROOT, 'doctor.sh'), ...args]);
+      if (args.includes('--container') || isRunningInContainer()) {
+        runContainerDoctor();
+      } else {
+        spawn('bash', [path.join(ROOT, 'doctor.sh'), ...args]);
+      }
     },
   },
   version: {
@@ -5210,6 +5418,7 @@ function showHelp() {
   console.log('  wayfind update                Update from npm, re-sync hooks, update container');
   console.log('  wayfind migrate-to-plugin     Remove old hooks/commands — let the plugin handle them');
   console.log('  wayfind doctor                Check installation health');
+  console.log('  wayfind doctor --container    Container-specific health checks (auto-detected in Docker)');
   console.log('');
   console.log('Publishing:');
   console.log('  wayfind sync-public           Sync code to usewayfind/wayfind (triggers npm + Docker publish)');

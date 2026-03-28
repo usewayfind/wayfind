@@ -2,6 +2,13 @@
 
 All notable changes to Wayfind are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.0.39] - 2026-03-28
+
+### Added
+- Container doctor: `wayfind doctor --container` (auto-detected in Docker) checks backend type, entry count, embedding coverage, signal freshness, and health endpoint status
+- Post-deploy smoke check: `wayfind update` now tails container logs after restart and flags any warnings
+- Schema migration test: 23 assertions verifying pre-v2.0.29 databases upgrade cleanly
+
 ## [2.0.38] - 2026-03-28
 
 ### Fixed

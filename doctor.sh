@@ -402,9 +402,10 @@ check_storage_backend() {
 
         # ── 2. Fallback detection ────────────────────────────────────────────
         if [ "$IS_FALLBACK" = "true" ]; then
-            warn "JSON backend is a fallback — better-sqlite3 was expected but failed to load"
-            info "Run: npm install -g better-sqlite3  (or reinstall wayfind)"
-            ISSUES=$((ISSUES + 1))
+            # JSON fallback is expected when better-sqlite3 isn't available (optional dep).
+            # Warn only — don't increment ISSUES. Use `wayfind doctor --container` in Docker.
+            warn "JSON backend (better-sqlite3 unavailable — optional)"
+            info "To enable SQLite: npm install -g better-sqlite3  (or rebuild container image)"
         elif [ "$BACKEND_TYPE" = "json" ]; then
             # Not a runtime fallback — check if sqlite3 is available but unused
             if node -e "require('better-sqlite3')" 2>/dev/null; then

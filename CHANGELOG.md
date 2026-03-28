@@ -2,6 +2,11 @@
 
 All notable changes to Wayfind are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.0.41] - 2026-03-28
+
+### Fixed
+- `wayfind doctor` no longer exits 1 when `better-sqlite3` is unavailable — JSON backend fallback is an optional nudge, not a hard error. Doctor now exits 0 on clean installs without native SQLite support (CI, minimal environments).
+
 ## [2.0.40] - 2026-03-28
 
 ### Added

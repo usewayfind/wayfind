@@ -2,6 +2,21 @@
 
 All notable changes to Wayfind are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.0.33] - 2026-03-28
+
+### Fixed
+- Container signal pull broken — `ensureContainerConfig()` now overrides `gh-cli` transport to `https` when `GITHUB_TOKEN` is present, and backfills repos from `TEAM_CONTEXT_GITHUB_REPOS` env var (#153)
+- SQLite backend silently falling back to JSON — bare `catch {}` replaced with warning to stderr so operators know when SQLite initialization fails (#154)
+
+### Added
+- `wayfind doctor` now checks storage backend type, detects unexpected JSON fallback, and warns when signal pulls are stale (>24h)
+- Storage backend `getBackendInfo()` API for programmatic backend introspection
+- Memory model architecture doc (`docs/architecture/memory-model.md`) — four-type taxonomy mapped to Wayfind implementation
+- MCP server design doc (`docs/design/mcp-server-design.md`) — read-only context tools with feedback channel
+- Architecture Principle #9 updated: MCP as optional read path over plain files
+- Architecture Principle #10 added: feedback loop across all access layers
+- 7 new storage backend simulation tests (auto-detect, fallback warning, signal consistency)
+
 ## [2.0.32] - 2026-03-27
 
 ### Added

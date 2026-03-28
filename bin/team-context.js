@@ -4370,10 +4370,10 @@ function ensureContainerConfig() {
     }
   }
 
-  // GitHub connector
-  if (!config.github && process.env.GITHUB_TOKEN) {
+  // GitHub connector — create if missing, or fix transport if mounted config has gh-cli
+  if (process.env.GITHUB_TOKEN) {
     const repos = process.env.TEAM_CONTEXT_GITHUB_REPOS;
-    if (repos) {
+    if (!config.github && repos) {
       config.github = {
         transport: 'https',
         token: process.env.GITHUB_TOKEN,
@@ -4382,6 +4382,19 @@ function ensureContainerConfig() {
         last_pull: null,
       };
       changed = true;
+    } else if (config.github) {
+      // Override gh-cli transport in container context — gh binary isn't available
+      if (config.github.transport === 'gh-cli') {
+        config.github.transport = 'https';
+        config.github.token = process.env.GITHUB_TOKEN;
+        config.github.token_env = 'GITHUB_TOKEN';
+        changed = true;
+      }
+      // Backfill repos from env if config has none or env specifies them
+      if (repos && (!config.github.repos || config.github.repos.length === 0)) {
+        config.github.repos = repos.split(',').map((r) => r.trim());
+        changed = true;
+      }
     }
   }
 

@@ -357,17 +357,116 @@ check_storage_backend() {
     echo ""
     echo "Storage backend"
 
+    set +e  # Temporarily disable errexit — node calls may fail in test environments
     # Check for env var override
     if [ -n "${TEAM_CONTEXT_STORAGE_BACKEND:-}" ]; then
         info "TEAM_CONTEXT_STORAGE_BACKEND=$TEAM_CONTEXT_STORAGE_BACKEND (env override)"
     fi
 
-    # Check if better-sqlite3 is available
-    if node -e "require('better-sqlite3')" 2>/dev/null; then
-        ok "Storage backend: sqlite (better-sqlite3 available)"
+    local WAYFIND_DIR="${WAYFIND_DIR:-$HOME/.claude/team-context}"
+    local SCRIPT_DIR
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+    # ── 1. Which backend is active ───────────────────────────────────────────
+    local BACKEND_RESULT=""
+    BACKEND_RESULT=$(node -e "
+      try {
+        const storage = require('$SCRIPT_DIR/bin/storage/index.js');
+        const storePath = '$WAYFIND_DIR';
+        storage.getBackend(storePath);
+        const info = storage.getBackendInfo(storePath);
+        if (!info) { console.log('NONE'); process.exit(0); }
+        console.log(JSON.stringify(info));
+      } catch (e) {
+        console.log('SKIP:' + e.message.split('\n')[0]);
+      }
+    " 2>/dev/null) || BACKEND_RESULT="SKIP:storage module not available"
+
+    if [[ "$BACKEND_RESULT" == SKIP:* ]]; then
+        [ "$VERBOSE" = true ] && info "Storage check skipped: ${BACKEND_RESULT#SKIP:}"
+    elif [[ "$BACKEND_RESULT" == "NONE" ]]; then
+        info "No storage backend initialized (team-context not configured)"
     else
-        ok "Storage backend: json (better-sqlite3 not installed — using JSON fallback)"
+        local BACKEND_TYPE
+        BACKEND_TYPE=$(echo "$BACKEND_RESULT" | node -e "const d=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8')); console.log(d.type)" 2>/dev/null || echo "unknown")
+        local IS_FALLBACK
+        IS_FALLBACK=$(echo "$BACKEND_RESULT" | node -e "const d=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8')); console.log(d.fallback)" 2>/dev/null || echo "false")
+
+        if [ "$BACKEND_TYPE" = "sqlite" ]; then
+            ok "Active backend: sqlite"
+        elif [ "$BACKEND_TYPE" = "json" ]; then
+            ok "Active backend: json"
+        else
+            warn "Active backend: $BACKEND_TYPE (unexpected)"
+        fi
+
+        # ── 2. Fallback detection ────────────────────────────────────────────
+        if [ "$IS_FALLBACK" = "true" ]; then
+            warn "JSON backend is a fallback — better-sqlite3 was expected but failed to load"
+            info "Run: npm install -g better-sqlite3  (or reinstall wayfind)"
+            ISSUES=$((ISSUES + 1))
+        elif [ "$BACKEND_TYPE" = "json" ]; then
+            # Not a runtime fallback — check if sqlite3 is available but unused
+            if node -e "require('better-sqlite3')" 2>/dev/null; then
+                warn "better-sqlite3 is installed but backend is JSON — possible unexpected fallback"
+                info "Check TEAM_CONTEXT_STORAGE_BACKEND env var or re-run setup"
+                ISSUES=$((ISSUES + 1))
+            else
+                [ "$VERBOSE" = true ] && info "better-sqlite3 not installed — JSON is expected"
+            fi
+        fi
     fi
+
+    # ── 3. Signal freshness (connectors.json last_pull) ──────────────────────
+    local CONNECTORS="$WAYFIND_DIR/connectors.json"
+    if [ -f "$CONNECTORS" ]; then
+        local FRESHNESS_RESULT
+        FRESHNESS_RESULT=$(node -e "
+          const fs = require('fs');
+          const config = JSON.parse(fs.readFileSync('$CONNECTORS', 'utf8'));
+          const connectors = ['github', 'intercom', 'notion'];
+          const now = Date.now();
+          const DAY = 24 * 60 * 60 * 1000;
+          const results = [];
+          for (const name of connectors) {
+            const c = config[name];
+            if (!c) continue;
+            const lp = c.last_pull;
+            if (!lp) {
+              results.push('WARN:' + name + ':never pulled');
+            } else {
+              const age = now - new Date(lp).getTime();
+              const hours = Math.floor(age / (60 * 60 * 1000));
+              if (age > DAY) {
+                results.push('WARN:' + name + ':' + hours + 'h ago');
+              } else {
+                results.push('OK:' + name + ':' + hours + 'h ago');
+              }
+            }
+          }
+          console.log(results.join('|'));
+        " 2>/dev/null) || FRESHNESS_RESULT=""
+
+        if [ -n "$FRESHNESS_RESULT" ]; then
+            IFS='|' read -ra ENTRIES <<< "$FRESHNESS_RESULT"
+            for entry in "${ENTRIES[@]}"; do
+                local STATUS="${entry%%:*}"
+                local REST="${entry#*:}"
+                local NAME="${REST%%:*}"
+                local DETAIL="${REST#*:}"
+                if [ "$STATUS" = "WARN" ]; then
+                    warn "Signal $NAME: $DETAIL"
+                    info "Run: wayfind pull $NAME"
+                    ISSUES=$((ISSUES + 1))
+                else
+                    ok "Signal $NAME: last pull $DETAIL"
+                fi
+            done
+        fi
+    else
+        [ "$VERBOSE" = true ] && info "No connectors.json — signal freshness check skipped"
+    fi
+    set -e  # Restore errexit
 }
 
 # Run checks

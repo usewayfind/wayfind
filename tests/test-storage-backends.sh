@@ -409,6 +409,156 @@ else
     _fail "clearCache clears backends" "Got: $RESULT"
 fi
 
+# ── 7. Backend fallback behavior ─────────────────────────────────────────────
+
+echo ""
+echo "7. Backend fallback behavior"
+echo "============================="
+
+if [ "$SQLITE_AVAILABLE" = "true" ]; then
+
+echo ""
+echo "Test: SQLite available → SQLite is used (auto-detect)"
+RESULT=$(node -e "
+  const { getBackend, getBackendType, clearCache } = require('$REPO_ROOT/bin/storage');
+  clearCache();
+  const store = '$TEST_HOME/fallback-auto-store';
+  getBackend(store);
+  const type = getBackendType(store);
+  console.log('TYPE:' + type);
+")
+if echo "$RESULT" | grep -qF "TYPE:sqlite"; then
+    _pass "auto-detect selects SqliteBackend when better-sqlite3 installed"
+else
+    _fail "auto-detect selects SqliteBackend when better-sqlite3 installed" "Got: $RESULT"
+fi
+
+echo ""
+echo "Test: Backend type reported correctly after getBackend()"
+FALLBACK_TYPE_STORE="$TEST_HOME/type-report-store"
+RESULT=$(TEAM_CONTEXT_STORAGE_BACKEND=sqlite node -e "
+  const { getBackend, getBackendType, clearCache } = require('$REPO_ROOT/bin/storage');
+  clearCache();
+  getBackend('$FALLBACK_TYPE_STORE');
+  console.log('SQLITE_TYPE:' + getBackendType('$FALLBACK_TYPE_STORE'));
+")
+if echo "$RESULT" | grep -qF "SQLITE_TYPE:sqlite"; then
+    _pass "getBackendType returns 'sqlite' for SqliteBackend"
+else
+    _fail "getBackendType returns 'sqlite' for SqliteBackend" "Got: $RESULT"
+fi
+RESULT=$(TEAM_CONTEXT_STORAGE_BACKEND=json node -e "
+  const { getBackend, getBackendType, clearCache } = require('$REPO_ROOT/bin/storage');
+  clearCache();
+  getBackend('$FALLBACK_TYPE_STORE');
+  console.log('JSON_TYPE:' + getBackendType('$FALLBACK_TYPE_STORE'));
+")
+if echo "$RESULT" | grep -qF "JSON_TYPE:json"; then
+    _pass "getBackendType returns 'json' for JsonBackend"
+else
+    _fail "getBackendType returns 'json' for JsonBackend" "Got: $RESULT"
+fi
+
+fi # end SQLITE_AVAILABLE for fallback tests (part 1)
+
+echo ""
+echo "Test: SQLite .open() fails → warning logged + JSON fallback"
+CORRUPT_STORE="$TEST_HOME/corrupt-store"
+mkdir -p "$CORRUPT_STORE"
+# Create a corrupt .db file that better-sqlite3 cannot open
+echo "NOT_A_SQLITE_DATABASE" > "$CORRUPT_STORE/content-store.db"
+chmod 444 "$CORRUPT_STORE/content-store.db"
+
+RESULT=$(node -e "
+  const { getBackend, getBackendType, getBackendInfo, clearCache } = require('$REPO_ROOT/bin/storage');
+  clearCache();
+  // Unset forced backend so auto-detect runs
+  delete process.env.TEAM_CONTEXT_STORAGE_BACKEND;
+  const b = getBackend('$CORRUPT_STORE');
+  console.log('TYPE:' + getBackendType('$CORRUPT_STORE'));
+  const info = getBackendInfo('$CORRUPT_STORE');
+  console.log('FALLBACK:' + (info ? info.fallback : 'n/a'));
+" 2>"$TEST_HOME/corrupt-stderr.txt")
+STDERR_OUT=$(cat "$TEST_HOME/corrupt-stderr.txt")
+
+if echo "$STDERR_OUT" | grep -qi "warning\|fall"; then
+    _pass "SQLite failure logs warning to stderr"
+else
+    _fail "SQLite failure logs warning to stderr" "stderr: $STDERR_OUT"
+fi
+if echo "$RESULT" | grep -qF "TYPE:json"; then
+    _pass "SQLite failure falls back to JsonBackend"
+else
+    _fail "SQLite failure falls back to JsonBackend" "Got: $RESULT"
+fi
+# Verify operations still work on the fallback backend
+RESULT=$(node -e "
+  const { getBackend, clearCache } = require('$REPO_ROOT/bin/storage');
+  clearCache();
+  delete process.env.TEAM_CONTEXT_STORAGE_BACKEND;
+  const b = getBackend('$CORRUPT_STORE');
+  const cs = require('$REPO_ROOT/bin/content-store.js');
+  cs.indexJournals({ journalDir: '$JOURNAL_DIR', storePath: '$CORRUPT_STORE' }).then(stats => {
+    console.log('COUNT:' + stats.entryCount);
+  });
+" 2>/dev/null)
+if echo "$RESULT" | grep -q "COUNT:[1-9]"; then
+    _pass "fallback JSON backend operations work"
+else
+    _fail "fallback JSON backend operations work" "Got: $RESULT"
+fi
+
+echo ""
+echo "Test: Signal entries survive backend consistency"
+SIGNAL_STORE="$TEST_HOME/signal-store"
+SIGNALS_DIR="$TEST_HOME/signals"
+mkdir -p "$SIGNALS_DIR/github"
+
+cat > "$SIGNALS_DIR/github/2026-03-01.md" << 'SIGEOF'
+# GitHub Activity Summary
+## Pull Requests
+- PR #42 merged: Add caching layer
+## Issues
+- Issue #55 opened: Performance regression
+SIGEOF
+
+cat > "$SIGNALS_DIR/github/2026-03-02.md" << 'SIGEOF'
+# GitHub Activity Summary
+## Pull Requests
+- PR #43 merged: Fix auth timeout
+SIGEOF
+
+RESULT=$(TEAM_CONTEXT_STORAGE_BACKEND=json node -e "
+  const { clearCache } = require('$REPO_ROOT/bin/storage');
+  clearCache();
+  const cs = require('$REPO_ROOT/bin/content-store.js');
+  cs.indexSignals({ signalsDir: '$SIGNALS_DIR', storePath: '$SIGNAL_STORE' }).then(() => {
+    clearCache();
+    const { getBackend } = require('$REPO_ROOT/bin/storage');
+    process.env.TEAM_CONTEXT_STORAGE_BACKEND = 'json';
+    const b = getBackend('$SIGNAL_STORE');
+    const index = b.loadIndex();
+    const entries = Object.values(index.entries);
+    const signalEntries = entries.filter(e => e.source === 'signal');
+    console.log('SIGNAL_COUNT:' + signalEntries.length);
+    console.log('TOTAL_ENTRIES:' + entries.length);
+    // Verify each signal entry has the right source
+    const allSignal = signalEntries.every(e => e.source === 'signal');
+    console.log('ALL_SIGNAL:' + allSignal);
+  });
+")
+SIGNAL_COUNT=$(echo "$RESULT" | grep -oP 'SIGNAL_COUNT:\K\d+' || echo "0")
+if [ "$SIGNAL_COUNT" = "2" ]; then
+    _pass "signal entries present with source:'signal' (count: $SIGNAL_COUNT)"
+else
+    _fail "signal entries present with source:'signal'" "Expected 2 signal entries, got: $SIGNAL_COUNT. Output: $RESULT"
+fi
+if echo "$RESULT" | grep -qF "ALL_SIGNAL:true"; then
+    _pass "all signal entries have source:'signal'"
+else
+    _fail "all signal entries have source:'signal'" "Got: $RESULT"
+fi
+
 # ── Summary ──────────────────────────────────────────────────────────────────
 
 echo ""

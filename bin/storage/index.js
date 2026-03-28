@@ -126,7 +126,9 @@ function getBackend(storePath) {
     migrateFromJson(backend, storePath);
     cache[storePath] = backend;
     return backend;
-  } catch {
+  } catch (err) {
+    console.error('Warning: SQLite backend failed to initialize, falling back to JSON.', err.message);
+    cache[storePath + ':fallback'] = true;
     const backend = new JsonBackend(storePath);
     backend.open();
     cache[storePath] = backend;
@@ -164,8 +166,23 @@ function getBackendType(storePath) {
   return null;
 }
 
+/**
+ * Returns detailed backend info including whether it was a silent fallback.
+ *
+ * @param {string} storePath
+ * @returns {{ type: 'sqlite'|'json'|'unknown', storePath: string, fallback: boolean }|null}
+ */
+function getBackendInfo(storePath) {
+  const backend = cache[storePath];
+  if (!backend) return null;
+  const type = backend instanceof JsonBackend ? 'json' :
+    (backend.constructor && backend.constructor.name === 'SqliteBackend') ? 'sqlite' : 'unknown';
+  return { type, storePath, fallback: !!cache[storePath + ':fallback'] };
+}
+
 module.exports = {
   getBackend,
   clearCache,
   getBackendType,
+  getBackendInfo,
 };

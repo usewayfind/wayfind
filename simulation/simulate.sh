@@ -35,6 +35,10 @@ SCENARIO_ORDER=(
     github-pull-simulate
     whoami-setup
     digest-generate-simulate
+    multi-team-routing
+    store-scope-indexing
+    store-scope-trim
+    store-scope-isolation
 )
 
 # ── Argument parsing ─────────────────────────────────────────────────────────

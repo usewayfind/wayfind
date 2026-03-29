@@ -1111,8 +1111,16 @@ async function runIndexJournals(args) {
   const journalDir = opts.dir || contentStore.DEFAULT_JOURNAL_DIR;
   const storePath = opts.store || contentStore.resolveStorePath();
 
+  // Load team scope allowlist from context.json — only index repos bound to the active team.
+  const ctxConfig = readContextConfig();
+  const teamId = readRepoTeamBinding() || ctxConfig.default;
+  const teamConfig = teamId && ctxConfig.teams && ctxConfig.teams[teamId];
+  const repoAllowlist = (teamConfig && teamConfig.bound_repos && teamConfig.bound_repos.length > 0)
+    ? teamConfig.bound_repos : undefined;
+
   console.log(`Indexing journals from: ${journalDir}`);
   console.log(`Store: ${storePath}`);
+  if (repoAllowlist) console.log(`Team scope (${teamId}): ${repoAllowlist.join(', ')}`);
   console.log('');
 
   try {
@@ -1120,6 +1128,7 @@ async function runIndexJournals(args) {
       journalDir,
       storePath,
       embeddings: opts.noEmbeddings ? false : undefined,
+      repoAllowlist,
     });
 
     console.log(`Indexed: ${stats.entryCount} entries`);
@@ -3591,6 +3600,21 @@ function contextBind(args) {
   writeRepoTeamBinding(teamId);
   console.log(`Bound this repo to: ${config.teams[teamId].name} (${teamId})`);
   console.log('Journals from this repo will sync to that team\'s context repo.');
+
+  // Derive repo label (e.g., "acme/api") and add to the team's bound_repos allowlist.
+  const cwdParts = process.cwd().split(path.sep);
+  const reposIdx = cwdParts.lastIndexOf('repos');
+  const repoLabel = (reposIdx >= 0 && reposIdx + 2 <= cwdParts.length)
+    ? cwdParts.slice(reposIdx + 1).join('/')
+    : cwdParts[cwdParts.length - 1];
+
+  const team = config.teams[teamId];
+  if (!team.bound_repos) team.bound_repos = [];
+  if (!team.bound_repos.includes(repoLabel)) {
+    team.bound_repos.push(repoLabel);
+    writeContextConfig(config);
+    console.log(`Added "${repoLabel}" to team scope.`);
+  }
 }
 
 function contextList() {
@@ -5000,6 +5024,52 @@ async function runContainerDoctor() {
   }
 }
 
+// ── Store management ────────────────────────────────────────────────────────
+
+async function runStoreTrim(args) {
+  const ctxConfig = readContextConfig();
+  const teamId = args[0] || readRepoTeamBinding() || ctxConfig.default;
+  if (!teamId) {
+    console.error('No team ID resolved. Usage: wayfind store trim [team-id]');
+    process.exit(1);
+  }
+  const team = ctxConfig.teams && ctxConfig.teams[teamId];
+  if (!team) {
+    console.error(`Team "${teamId}" not found.`);
+    process.exit(1);
+  }
+  const allowedPatterns = team.bound_repos;
+  if (!allowedPatterns || allowedPatterns.length === 0) {
+    console.error(`Team "${teamId}" has no bound_repos in context.json. Configure them first.`);
+    process.exit(1);
+  }
+  const storePath = contentStore.resolveStorePath(teamId);
+  console.log(`Team:     ${team.name} (${teamId})`);
+  console.log(`Store:    ${storePath}`);
+  console.log(`Patterns: ${allowedPatterns.join(', ')}`);
+  console.log('');
+  const stats = await contentStore.trimStore(storePath, allowedPatterns);
+  console.log(`Kept:    ${stats.kept}`);
+  console.log(`Removed: ${stats.removed}`);
+  if (stats.removedRepos.length > 0) {
+    console.log(`Repos removed:`);
+    stats.removedRepos.forEach(r => console.log(`  ${r}`));
+  }
+}
+
+async function runStore(args) {
+  const [sub, ...subArgs] = args;
+  switch (sub) {
+    case 'trim':
+      await runStoreTrim(subArgs);
+      break;
+    default:
+      console.error(`Unknown store subcommand: ${sub || ''}`);
+      console.error('Available: trim');
+      process.exit(1);
+  }
+}
+
 // ── Command registry ────────────────────────────────────────────────────────
 
 const COMMANDS = {
@@ -5273,6 +5343,10 @@ const COMMANDS = {
   deploy: {
     desc: 'Scaffold Docker deployment in your team context repo',
     run: (args) => runDeploy(args),
+  },
+  store: {
+    desc: 'Manage content store (trim)',
+    run: (args) => runStore(args),
   },
   onboard: {
     desc: 'Generate an onboarding context pack for a repo',

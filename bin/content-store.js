@@ -176,6 +176,27 @@ function isRepoExcluded(repo) {
   return false;
 }
 
+/**
+ * Check if a repo name matches a team scope pattern list.
+ * Patterns ending with '/' are prefix matches (e.g., 'acme/' matches 'acme/api', 'acme/frontend').
+ * All other patterns are exact matches.
+ * @param {string|null} repo
+ * @param {string[]} patterns
+ * @returns {boolean}
+ */
+function matchesTeamScope(repo, patterns) {
+  if (!patterns || patterns.length === 0) return true;
+  if (!repo) return false;
+  for (const p of patterns) {
+    if (p.endsWith('/')) {
+      if (repo.startsWith(p)) return true;
+    } else if (repo === p) {
+      return true;
+    }
+  }
+  return false;
+}
+
 // ── Journal parsing ─────────────────────────────────────────────────────────
 
 /**
@@ -432,6 +453,7 @@ async function indexJournals(options = {}) {
 
     for (const entry of entries) {
       if (isRepoExcluded(entry.repo)) continue;
+      if (options.repoAllowlist && !matchesTeamScope(entry.repo, options.repoAllowlist)) continue;
       const id = generateEntryId(date, entry.repo, entry.title);
       const author = entry.author || options.defaultAuthor || '';
       const content = buildContent({ ...entry, date, author });
@@ -2290,6 +2312,47 @@ function deduplicateResults(results) {
   return results.filter(r => !absorbedIds.has(r.id));
 }
 
+/**
+ * Remove entries from a store whose repo doesn't match the allowed patterns.
+ * Trims both index and embeddings. Safe to call repeatedly (idempotent).
+ * @param {string} storePath
+ * @param {string[]} allowedPatterns - prefix patterns (ending '/') or exact names
+ * @returns {{ kept: number, removed: number, removedRepos: string[] }}
+ */
+async function trimStore(storePath, allowedPatterns) {
+  if (!allowedPatterns || allowedPatterns.length === 0) {
+    throw new Error('allowedPatterns is required — refusing to trim to empty set');
+  }
+  const backend = getBackend(storePath);
+  const idx = backend.loadIndex();
+  const embeddings = backend.loadEmbeddings() || {};
+
+  const keptEntries = {};
+  const keptEmbeddings = {};
+  const removedRepos = [];
+
+  for (const [id, entry] of Object.entries(idx.entries || {})) {
+    if (matchesTeamScope(entry.repo, allowedPatterns)) {
+      keptEntries[id] = entry;
+      if (embeddings[id]) keptEmbeddings[id] = embeddings[id];
+    } else {
+      removedRepos.push(entry.repo);
+    }
+  }
+
+  idx.entries = keptEntries;
+  idx.entryCount = Object.keys(keptEntries).length;
+  idx.lastUpdated = new Date().toISOString();
+  backend.saveIndex(idx);
+  backend.saveEmbeddings(keptEmbeddings);
+
+  return {
+    kept: idx.entryCount,
+    removed: removedRepos.length,
+    removedRepos: [...new Set(removedRepos)].sort(),
+  };
+}
+
 module.exports = {
   // Parsing
   parseJournalFile,
@@ -2318,7 +2381,11 @@ module.exports = {
 
   // Filtering
   isRepoExcluded,
+  matchesTeamScope,
   applyFilters,
+
+  // Store maintenance
+  trimStore,
 
   // Quality & dedup
   computeQualityScore,

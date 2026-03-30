@@ -576,7 +576,8 @@ echo ""
 echo "Test: buildFeedbackContext with reactions only"
 RESULT=$(node -e "
   const cs = require('$REPO_ROOT/bin/content-store');
-  cs.recordDigestDelivery({ date: '2026-03-14', persona: 'unified', channel: 'C1', ts: '100.200', storePath: '$FEEDBACK_STORE' });
+  const today = new Date().toISOString().slice(0, 10);
+  cs.recordDigestDelivery({ date: today, persona: 'unified', channel: 'C1', ts: '100.200', storePath: '$FEEDBACK_STORE' });
   cs.recordDigestReaction({ messageTs: '100.200', reaction: 'rocket', delta: 1, storePath: '$FEEDBACK_STORE' });
   cs.recordDigestReaction({ messageTs: '100.200', reaction: 'fire', delta: 1, storePath: '$FEEDBACK_STORE' });
   const digest = require('$REPO_ROOT/bin/digest');

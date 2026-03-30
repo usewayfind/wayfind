@@ -132,6 +132,59 @@ wayfind migrate-to-plugin
 
 ---
 
+## MCP Server & Container Search
+
+### How does the MCP server work?
+
+Wayfind includes an MCP server (`wayfind-mcp`) that exposes 8 tools: `search_context`, `get_entry`, `list_recent`, `get_signals`, `get_team_status`, `get_personas`, `record_feedback`, and `add_context`. It's auto-registered during `wayfind init` and works with any MCP-compatible AI tool (Claude Code, Cursor, etc.).
+
+### How do team members get semantic search without running a container?
+
+The team owner runs a Docker container that indexes all team journals with embeddings. The container exposes a search API on its health port (default 3141). Team members' local MCP servers automatically proxy semantic search to the container — no Docker required on their end.
+
+The connection uses a shared API key stored in the team-context repo (`.wayfind-api-key`). Anyone who can clone the repo can read the key. The key rotates daily and is committed automatically.
+
+### How do I set up the container endpoint for my team?
+
+The team owner runs `wayfind deploy --team <id>`, which writes `container_endpoint` to `context.json`. Team members pull the team-context repo and the endpoint is discovered automatically.
+
+If the container is on a different machine (e.g., via Tailscale), update the hostname:
+```
+wayfind deploy set-endpoint http://your-hostname:3141 --team <id>
+```
+
+### The MCP server can't find entries from other team members
+
+Your local MCP server falls back to local search when the container is unreachable. Check:
+1. Is `container_endpoint` set in `context.json`? (`wayfind context list`)
+2. Is the container running? (`curl http://<endpoint>/healthz`)
+3. Is `.wayfind-api-key` present in the team-context repo? (`ls <team-context-path>/.wayfind-api-key`)
+
+### I'm getting 401 errors from the container
+
+The API key rotates daily. Your local MCP server retries automatically after re-reading the key, but if the team-context repo is stale:
+```
+cd <team-context-path> && git pull
+```
+
+---
+
+## Per-Team Store Isolation
+
+### What is per-team store scoping?
+
+As of v2.0.44, each team's content store only indexes journals from repos bound to that team. This prevents cross-team contamination — a personal team store won't contain work journals, and vice versa.
+
+### How do I clean up a contaminated store?
+
+```
+wayfind store trim <team-id>
+```
+
+This removes entries from repos not in the team's `bound_repos` list.
+
+---
+
 ## Known Issues
 
 ### Docker build requires `npm install` not `npm ci`

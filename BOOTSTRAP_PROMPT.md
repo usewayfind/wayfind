@@ -27,6 +27,9 @@ Once both steps complete:
 6. Ask me if I want to set up team context (/wayfind:init-team) for shared journals,
    digests, and product state
 7. Let me know that anonymous usage telemetry is enabled by default (set TEAM_CONTEXT_TELEMETRY=false to opt out)
+8. If I'm joining an existing team, check if there's a container_endpoint in my
+   context.json — if so, my MCP server will automatically proxy semantic search
+   to the team's container. No extra setup needed.
 ```
 
 ---
@@ -36,10 +39,12 @@ Once both steps complete:
 The CLI install creates:
 - `~/.claude/memory/` and `~/.claude/memory/journal/`
 - `~/.claude/global-state.md` (your persistent index)
+- `~/.claude/team-context/context.json` (team registry for multi-team support)
 
 The plugin provides:
 - SessionStart and Stop hooks (context loading, decision extraction)
 - Slash commands: `/wayfind:init-memory`, `/wayfind:init-team`, `/wayfind:journal`, `/wayfind:doctor`, `/wayfind:standup`
+- MCP server (`wayfind-mcp`) — registered automatically, gives any MCP-compatible AI tool access to your team's context
 
 After the paste, Claude will walk you through filling in your preferences. From
 then on, every session in every repo will start with full context of where you
@@ -100,6 +105,27 @@ Claude will create `.claude/team-state.md` (shared) and `.claude/personal-state.
 
 ---
 
+## Container deployment (for teams)
+
+One team member (the team owner) runs a Docker container that provides:
+- Slack bot, automated digests, signal connectors
+- Semantic search API for the whole team's content
+- API key auto-rotation (daily, committed to team-context repo)
+
+Other team members don't need Docker — their local MCP server automatically
+proxies search queries to the container via the shared API key.
+
+```bash
+wayfind deploy --team <teamId>           # Scaffold config
+# Edit deploy/.env with your Anthropic key
+cd deploy && docker compose up -d        # Start container
+wayfind deploy set-endpoint http://your-hostname:3141 --team <teamId>  # Set endpoint for team
+```
+
+Team members pull the team-context repo to get the API key and endpoint config.
+
+---
+
 ## For Cursor users
 
 ```
@@ -117,11 +143,11 @@ https://github.com/usewayfind/wayfind
 
 To install a specific version:
 ```
-npm install -g wayfind@2.0.15
+npm install -g wayfind@2.0.45
 wayfind init
 ```
 
 Or via the shell installer with a pinned version:
 ```
-WAYFIND_VERSION=v2.0.15 bash <(curl -fsSL https://raw.githubusercontent.com/usewayfind/wayfind/main/install.sh)
+WAYFIND_VERSION=v2.0.45 bash <(curl -fsSL https://raw.githubusercontent.com/usewayfind/wayfind/main/install.sh)
 ```

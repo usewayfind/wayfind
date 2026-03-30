@@ -30,7 +30,198 @@ const path = require('path');
 const fs = require('fs');
 const contentStore = require('./content-store.js');
 
+const http = require('http');
+
 const pkg = require('../package.json');
+
+// ── Container proxy ─────────────────────────────────────────────────────────
+
+const HOME = process.env.HOME || process.env.USERPROFILE;
+const WAYFIND_DIR = HOME ? path.join(HOME, '.claude', 'team-context') : null;
+
+/**
+ * Read context.json to find the active team's container_endpoint.
+ */
+function getContainerEndpoint() {
+  if (!WAYFIND_DIR) return null;
+  const configPath = path.join(WAYFIND_DIR, 'context.json');
+  try {
+    const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    // Resolve active team: repo binding → default
+    const teamId = getActiveTeamId(config);
+    if (!teamId || !config.teams || !config.teams[teamId]) return null;
+    return config.teams[teamId].container_endpoint || null;
+  } catch (_) {
+    return null;
+  }
+}
+
+/**
+ * Resolve active team ID from context.json (simplified — mirrors team-context.js logic).
+ */
+function getActiveTeamId(config) {
+  // Check repo-level binding first
+  try {
+    const bindingFile = path.join(process.cwd(), '.claude', 'wayfind.json');
+    if (fs.existsSync(bindingFile)) {
+      const binding = JSON.parse(fs.readFileSync(bindingFile, 'utf8'));
+      if (binding.team_id) return binding.team_id;
+    }
+  } catch (_) {}
+  return config.default || null;
+}
+
+/**
+ * Read the shared API key from the team-context repo.
+ */
+function readApiKey() {
+  if (!WAYFIND_DIR) return null;
+  try {
+    const config = JSON.parse(fs.readFileSync(path.join(WAYFIND_DIR, 'context.json'), 'utf8'));
+    const teamId = getActiveTeamId(config);
+    if (!teamId || !config.teams || !config.teams[teamId]) return null;
+    const teamPath = config.teams[teamId].path;
+    if (!teamPath) return null;
+    const keyFile = path.join(teamPath, '.wayfind-api-key');
+    return fs.readFileSync(keyFile, 'utf8').trim();
+  } catch (_) {
+    return null;
+  }
+}
+
+// Cache for API key (re-read from disk on 401)
+let cachedApiKey = null;
+
+/**
+ * HTTP POST to the container's search API.
+ * Returns parsed JSON or null on failure.
+ */
+function containerPost(endpoint, apiKey, body) {
+  return new Promise((resolve) => {
+    try {
+      const url = new URL(endpoint);
+      const postData = JSON.stringify(body);
+      const req = http.request({
+        hostname: url.hostname,
+        port: url.port || 80,
+        path: url.pathname,
+        method: 'POST',
+        timeout: 10000,
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(postData),
+          'Authorization': `Bearer ${apiKey}`,
+        },
+      }, (res) => {
+        let data = '';
+        res.on('data', (chunk) => { data += chunk; });
+        res.on('end', () => {
+          resolve({ status: res.statusCode, body: data });
+        });
+      });
+      req.on('error', () => resolve(null));
+      req.on('timeout', () => { req.destroy(); resolve(null); });
+      req.write(postData);
+      req.end();
+    } catch (_) {
+      resolve(null);
+    }
+  });
+}
+
+/**
+ * HTTP GET from the container's entry API.
+ */
+function containerGet(endpoint, apiKey) {
+  return new Promise((resolve) => {
+    try {
+      const url = new URL(endpoint);
+      const req = http.request({
+        hostname: url.hostname,
+        port: url.port || 80,
+        path: url.pathname + url.search,
+        method: 'GET',
+        timeout: 10000,
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+        },
+      }, (res) => {
+        let data = '';
+        res.on('data', (chunk) => { data += chunk; });
+        res.on('end', () => {
+          resolve({ status: res.statusCode, body: data });
+        });
+      });
+      req.on('error', () => resolve(null));
+      req.on('timeout', () => { req.destroy(); resolve(null); });
+      req.end();
+    } catch (_) {
+      resolve(null);
+    }
+  });
+}
+
+/**
+ * Try to proxy a search request to the container.
+ * On 401, re-reads the API key from disk and retries once.
+ * Returns parsed result or null if container unreachable/unavailable.
+ */
+async function proxySearch(body) {
+  const endpoint = getContainerEndpoint();
+  if (!endpoint) return null;
+
+  if (!cachedApiKey) cachedApiKey = readApiKey();
+  if (!cachedApiKey) return null;
+
+  const searchUrl = `${endpoint}/api/search`;
+  let result = await containerPost(searchUrl, cachedApiKey, body);
+
+  // On 401, re-read key (may have been rotated) and retry once
+  if (result && result.status === 401) {
+    process.stderr.write('Container returned 401 — re-reading API key...\n');
+    cachedApiKey = readApiKey();
+    if (!cachedApiKey) return null;
+    result = await containerPost(searchUrl, cachedApiKey, body);
+  }
+
+  if (!result || result.status !== 200) return null;
+
+  try {
+    return JSON.parse(result.body);
+  } catch (_) {
+    return null;
+  }
+}
+
+/**
+ * Try to proxy an entry retrieval to the container.
+ * Same 401-retry logic as proxySearch.
+ */
+async function proxyGetEntry(id) {
+  const endpoint = getContainerEndpoint();
+  if (!endpoint) return null;
+
+  if (!cachedApiKey) cachedApiKey = readApiKey();
+  if (!cachedApiKey) return null;
+
+  const entryUrl = `${endpoint}/api/entry/${encodeURIComponent(id)}`;
+  let result = await containerGet(entryUrl, cachedApiKey);
+
+  if (result && result.status === 401) {
+    process.stderr.write('Container returned 401 — re-reading API key...\n');
+    cachedApiKey = readApiKey();
+    if (!cachedApiKey) return null;
+    result = await containerGet(entryUrl, cachedApiKey);
+  }
+
+  if (!result || result.status !== 200) return null;
+
+  try {
+    return JSON.parse(result.body);
+  } catch (_) {
+    return null;
+  }
+}
 
 // ── Tool definitions ─────────────────────────────────────────────────────────
 
@@ -137,8 +328,18 @@ const TOOLS = [
 
 async function handleSearchContext(args) {
   const { query, limit = 10, repo, since, mode } = args;
-  const opts = { limit, repo, since };
 
+  // Try container first for semantic search (has embeddings for full team)
+  if (mode !== 'text') {
+    const containerResult = await proxySearch({ query, limit, repo, since, mode });
+    if (containerResult && containerResult.found > 0) {
+      containerResult.source = 'container';
+      return containerResult;
+    }
+  }
+
+  // Fall back to local search
+  const opts = { limit, repo, since };
   let results;
   if (mode === 'text') {
     results = contentStore.searchText(query, opts);
@@ -147,11 +348,12 @@ async function handleSearchContext(args) {
   }
 
   if (!results || results.length === 0) {
-    return { found: 0, results: [], hint: 'No matches. Try a broader query or check wayfind reindex.' };
+    return { found: 0, results: [], source: 'local', hint: 'No matches. Try a broader query or check wayfind reindex.' };
   }
 
   return {
     found: results.length,
+    source: 'local',
     results: results.map(r => ({
       id: r.id,
       score: r.score ? Math.round(r.score * 1000) / 1000 : null,
@@ -165,29 +367,34 @@ async function handleSearchContext(args) {
   };
 }
 
-function handleGetEntry(args) {
+async function handleGetEntry(args) {
   const { id } = args;
   const storePath = contentStore.resolveStorePath();
   const journalDir = contentStore.DEFAULT_JOURNAL_DIR;
 
-  // Get entry metadata
+  // Try local first (fastest)
   const index = contentStore.getBackend(storePath).loadIndex();
-  if (!index || !index.entries || !index.entries[id]) {
-    return { error: `Entry not found: ${id}` };
+  if (index && index.entries && index.entries[id]) {
+    const entry = index.entries[id];
+    const fullContent = contentStore.getEntryContent(id, { storePath, journalDir });
+    return {
+      id,
+      date: entry.date,
+      repo: entry.repo,
+      title: entry.title,
+      source: entry.source,
+      tags: entry.tags || [],
+      content: fullContent || entry.summary || null,
+    };
   }
 
-  const entry = index.entries[id];
-  const fullContent = contentStore.getEntryContent(id, { storePath, journalDir });
+  // Not found locally — try container (may have entries from other team members)
+  const containerResult = await proxyGetEntry(id);
+  if (containerResult && !containerResult.error) {
+    return containerResult;
+  }
 
-  return {
-    id,
-    date: entry.date,
-    repo: entry.repo,
-    title: entry.title,
-    source: entry.source,
-    tags: entry.tags || [],
-    content: fullContent || entry.summary || null,
-  };
+  return { error: `Entry not found: ${id}` };
 }
 
 function handleListRecent(args) {
@@ -382,7 +589,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   let result;
   switch (name) {
     case 'search_context':   result = await handleSearchContext(args); break;
-    case 'get_entry':        result = handleGetEntry(args); break;
+    case 'get_entry':        result = await handleGetEntry(args); break;
     case 'list_recent':      result = handleListRecent(args); break;
     case 'get_signals':      result = handleGetSignals(args); break;
     case 'get_team_status':  result = handleGetTeamStatus(args); break;

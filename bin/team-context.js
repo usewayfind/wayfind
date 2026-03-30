@@ -2103,7 +2103,7 @@ function commitAndPushTeamJournals(teamContextPath, copied) {
   stampMemberVersion(teamContextPath);
 
   try {
-    const gitAdd = spawnSync('git', ['add', 'journals/', 'members/'], { cwd: teamContextPath, stdio: 'pipe' });
+    const gitAdd = spawnSync('git', ['add', 'journals/', 'members/', '.wayfind-api-key'], { cwd: teamContextPath, stdio: 'pipe' });
     if (gitAdd.status !== 0) {
       console.error(`git add failed: ${(gitAdd.stderr || '').toString().trim()}`);
       return;
@@ -3804,9 +3804,27 @@ async function runDeploy(args) {
     case 'status':
       deployStatus();
       break;
+    case 'set-endpoint': {
+      const endpointTeamId = teamId || (readContextConfig().default);
+      const endpointUrl = filteredArgs[1];
+      if (!endpointTeamId || !endpointUrl) {
+        console.error('Usage: wayfind deploy set-endpoint <url> --team <id>');
+        console.error('Example: wayfind deploy set-endpoint http://gregs-laptop:3141 --team abc123');
+        process.exit(1);
+      }
+      const cfg = readContextConfig();
+      if (!cfg.teams || !cfg.teams[endpointTeamId]) {
+        console.error(`Team "${endpointTeamId}" not found in context.json`);
+        process.exit(1);
+      }
+      cfg.teams[endpointTeamId].container_endpoint = endpointUrl;
+      writeContextConfig(cfg);
+      console.log(`Set container_endpoint for team "${endpointTeamId}" to ${endpointUrl}`);
+      break;
+    }
     default:
       console.error(`Unknown deploy subcommand: ${sub}`);
-      console.error('Available: init [--team <id>], list, status');
+      console.error('Available: init [--team <id>], list, status, set-endpoint');
       process.exit(1);
   }
 }
@@ -3945,6 +3963,15 @@ function deployTeamInit(teamId, { port } = {}) {
         console.log('  .gitignore — added deploy/.env');
       }
     }
+  }
+
+  // Store container_endpoint in context.json so team members' MCP can discover it
+  const updatedConfig = readContextConfig();
+  if (updatedConfig.teams && updatedConfig.teams[teamId]) {
+    updatedConfig.teams[teamId].container_endpoint = `http://localhost:${assignedPort}`;
+    writeContextConfig(updatedConfig);
+    console.log(`  context.json — set container_endpoint to http://localhost:${assignedPort}`);
+    console.log('  Tip: update the hostname if team members connect over a network (e.g. Tailscale).');
   }
 
   console.log('');
@@ -4174,14 +4201,149 @@ function deployStatus() {
   }
 }
 
-// ── Health endpoint ──────────────────────────────────────────────────────────
+// ── API key management ──────────────────────────────────────────────────────
+
+/**
+ * Read or generate the API key for container search endpoints.
+ * Key is stored in the team-context repo so team members can read it.
+ */
+function getOrCreateApiKey() {
+  const teamDir = process.env.TEAM_CONTEXT_TEAM_CONTEXT_DIR;
+  if (!teamDir) return null;
+
+  const keyFile = path.join(teamDir, '.wayfind-api-key');
+  try {
+    if (fs.existsSync(keyFile)) {
+      const key = fs.readFileSync(keyFile, 'utf8').trim();
+      if (key.length >= 32) return key;
+    }
+  } catch (_) {}
+
+  // Generate a new key
+  const key = crypto.randomBytes(32).toString('hex');
+  try {
+    fs.writeFileSync(keyFile, key + '\n', 'utf8');
+    console.log(`[${new Date().toISOString()}] Generated new API key in ${keyFile}`);
+  } catch (err) {
+    console.error(`Failed to write API key: ${err.message}`);
+    return null;
+  }
+  return key;
+}
+
+/**
+ * Rotate the API key and commit/push it to the team-context repo.
+ */
+function rotateApiKey() {
+  const teamDir = process.env.TEAM_CONTEXT_TEAM_CONTEXT_DIR;
+  if (!teamDir) return;
+
+  const key = crypto.randomBytes(32).toString('hex');
+  const keyFile = path.join(teamDir, '.wayfind-api-key');
+  try {
+    fs.writeFileSync(keyFile, key + '\n', 'utf8');
+    currentApiKey = key;
+    console.log(`[${new Date().toISOString()}] Rotated API key`);
+    pushApiKey(teamDir);
+  } catch (err) {
+    console.error(`Key rotation failed: ${err.message}`);
+  }
+}
+
+/**
+ * Git add/commit/push the API key file.
+ */
+function pushApiKey(teamDir) {
+  const token = process.env.GITHUB_TOKEN;
+  const env = { ...process.env };
+  const gitConfig = [['safe.directory', teamDir]];
+  if (token) {
+    env.GIT_ASKPASS = 'echo';
+    env.GIT_TERMINAL_PROMPT = '0';
+    gitConfig.push(['credential.helper', '']);
+    gitConfig.push([`url.https://x-access-token:${token}@github.com/.insteadOf`, 'https://github.com/']);
+  }
+  env.GIT_CONFIG_COUNT = String(gitConfig.length);
+  for (let i = 0; i < gitConfig.length; i++) {
+    env[`GIT_CONFIG_KEY_${i}`] = gitConfig[i][0];
+    env[`GIT_CONFIG_VALUE_${i}`] = gitConfig[i][1];
+  }
+
+  try {
+    spawnSync('git', ['add', '.wayfind-api-key'], { cwd: teamDir, env, stdio: 'pipe' });
+    const diff = spawnSync('git', ['diff', '--cached', '--quiet'], { cwd: teamDir, env, stdio: 'pipe' });
+    if (diff.status === 0) return; // Nothing to commit
+    spawnSync('git', ['commit', '-m', 'Rotate Wayfind API key'], { cwd: teamDir, env, stdio: 'pipe' });
+    const push = spawnSync('git', ['push'], { cwd: teamDir, env, stdio: 'pipe', timeout: 30000 });
+    if (push.status !== 0) {
+      // Rebase and retry on conflict
+      spawnSync('git', ['pull', '--rebase'], { cwd: teamDir, env, stdio: 'pipe', timeout: 30000 });
+      spawnSync('git', ['push'], { cwd: teamDir, env, stdio: 'pipe', timeout: 30000 });
+    }
+  } catch (err) {
+    console.error(`API key push failed: ${err.message}`);
+  }
+}
+
+// Current in-memory API key (loaded on startup, updated on rotation)
+let currentApiKey = null;
+
+// ── Health + API endpoint ───────────────────────────────────────────────────
 
 let healthStatus = { ok: true, mode: null, started: null, services: {} };
 
+/**
+ * Parse JSON body from an incoming request.
+ */
+function parseJsonBody(req) {
+  return new Promise((resolve, reject) => {
+    let body = '';
+    req.on('data', (chunk) => { body += chunk; if (body.length > 1e6) reject(new Error('Body too large')); });
+    req.on('end', () => {
+      try { resolve(body ? JSON.parse(body) : {}); }
+      catch (e) { reject(e); }
+    });
+    req.on('error', reject);
+  });
+}
+
+/**
+ * Check Authorization header against the current API key.
+ * Returns true if authorized, false otherwise (and sends 401).
+ */
+function checkApiAuth(req, res) {
+  if (!currentApiKey) {
+    res.writeHead(503, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'API key not configured' }));
+    return false;
+  }
+  const auth = req.headers['authorization'] || '';
+  const token = auth.startsWith('Bearer ') ? auth.slice(7).trim() : '';
+  if (token !== currentApiKey) {
+    res.writeHead(401, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Invalid or expired API key' }));
+    return false;
+  }
+  return true;
+}
+
 function startHealthServer() {
   const port = parseInt(process.env.TEAM_CONTEXT_HEALTH_PORT || '3141', 10);
-  const server = http.createServer((req, res) => {
-    if (req.url === '/healthz' && req.method === 'GET') {
+
+  // Load API key for search endpoints
+  const teamDir = process.env.TEAM_CONTEXT_TEAM_CONTEXT_DIR;
+  const keyExisted = teamDir && fs.existsSync(path.join(teamDir, '.wayfind-api-key'));
+  currentApiKey = getOrCreateApiKey();
+  if (currentApiKey) {
+    console.log('API search endpoints enabled (key loaded)');
+    // Push newly generated key so team members can pull it
+    if (!keyExisted && teamDir) pushApiKey(teamDir);
+  }
+
+  const server = http.createServer(async (req, res) => {
+    const url = new URL(req.url, `http://localhost:${port}`);
+
+    if (url.pathname === '/healthz' && req.method === 'GET') {
       // Enrich with index freshness
       const storePath = contentStore.resolveStorePath();
       const index = contentStore.loadIndex(storePath);
@@ -4196,17 +4358,108 @@ function startHealthServer() {
       const botExpected = healthStatus.services.bot === 'running';
       const slackHealthy = !botExpected || slackStatus.connected;
 
-      const response = { ...healthStatus, index: indexInfo, slack: slackStatus };
+      const response = {
+        ...healthStatus,
+        index: indexInfo,
+        slack: slackStatus,
+        api: { enabled: !!currentApiKey },
+      };
       const status = (healthStatus.ok && slackHealthy) ? 200 : 503;
       res.writeHead(status, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify(response));
-    } else {
-      res.writeHead(404);
-      res.end();
+      return;
     }
+
+    // ── Search API: POST /api/search ──
+    if (url.pathname === '/api/search' && req.method === 'POST') {
+      if (!checkApiAuth(req, res)) return;
+      try {
+        const body = await parseJsonBody(req);
+        const { query, limit = 10, repo, since, mode } = body;
+        if (!query) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'query is required' }));
+          return;
+        }
+
+        const opts = { limit, repo, since };
+        let results;
+        if (mode === 'text') {
+          results = contentStore.searchText(query, opts);
+        } else {
+          results = await contentStore.searchJournals(query, opts);
+        }
+
+        const mapped = (results || []).map(r => ({
+          id: r.id,
+          score: r.score ? Math.round(r.score * 1000) / 1000 : null,
+          date: r.entry.date,
+          repo: r.entry.repo,
+          title: r.entry.title,
+          source: r.entry.source,
+          tags: r.entry.tags || [],
+          summary: r.entry.summary || null,
+        }));
+
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ found: mapped.length, results: mapped }));
+      } catch (err) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: err.message }));
+      }
+      return;
+    }
+
+    // ── Entry API: GET /api/entry/:id ──
+    if (url.pathname.startsWith('/api/entry/') && req.method === 'GET') {
+      if (!checkApiAuth(req, res)) return;
+      try {
+        const id = decodeURIComponent(url.pathname.slice('/api/entry/'.length));
+        if (!id) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'entry id is required' }));
+          return;
+        }
+
+        const storePath = contentStore.resolveStorePath();
+        const journalDir = process.env.TEAM_CONTEXT_JOURNALS_DIR || contentStore.DEFAULT_JOURNAL_DIR;
+        const index = contentStore.getBackend(storePath).loadIndex();
+
+        if (!index || !index.entries || !index.entries[id]) {
+          res.writeHead(404, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: `Entry not found: ${id}` }));
+          return;
+        }
+
+        const entry = index.entries[id];
+        const fullContent = contentStore.getEntryContent(id, { storePath, journalDir });
+
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          id,
+          date: entry.date,
+          repo: entry.repo,
+          title: entry.title,
+          source: entry.source,
+          tags: entry.tags || [],
+          content: fullContent || entry.summary || null,
+        }));
+      } catch (err) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: err.message }));
+      }
+      return;
+    }
+
+    res.writeHead(404);
+    res.end();
   });
   server.listen(port, () => {
-    console.log(`Health endpoint: http://0.0.0.0:${port}/healthz`);
+    console.log(`Health + API endpoint: http://0.0.0.0:${port}/healthz`);
+    if (currentApiKey) {
+      console.log(`  Search API: POST http://0.0.0.0:${port}/api/search`);
+      console.log(`  Entry API:  GET  http://0.0.0.0:${port}/api/entry/:id`);
+    }
   });
   return server;
 }
@@ -4360,6 +4613,14 @@ function runStartScheduler() {
     await indexConversationsIfAvailable();
     console.log(`[${new Date().toISOString()}] Re-indexing signals...`);
     await indexSignalsIfAvailable();
+  });
+
+  // Rotate API key daily (default 2am)
+  const keyRotateSchedule = process.env.TEAM_CONTEXT_KEY_ROTATE_SCHEDULE || '0 2 * * *';
+  console.log(`API key rotation schedule: ${keyRotateSchedule}`);
+  scheduleCron(keyRotateSchedule, () => {
+    console.log(`[${new Date().toISOString()}] Rotating API key...`);
+    rotateApiKey();
   });
 
   console.log('Scheduler running. Waiting for scheduled events...');

@@ -63,7 +63,9 @@ Once the digest is posting, the next high-value step is the Slack bot. It lets a
 
 The bot searches the content store (journal entries indexed by `index-journals`), synthesizes an answer via LLM, and replies in a thread. It acknowledges with an eyes emoji immediately so the team knows it's working.
 
-**Who runs it:** For the pilot, one team member runs the bot locally. It connects via Socket Mode (WebSocket), so no public endpoint is needed. To run the bot persistently (no terminal needed), use `wayfind deploy init` in the team context repo to scaffold a Docker Compose deployment. Long-term, this moves to a hosted service — the architecture supports local, self-hosted Docker, and cloud modes.
+**Who runs it:** For the pilot, one team member runs the bot locally. It connects via Socket Mode (WebSocket), so no public endpoint is needed. To run the bot persistently (no terminal needed), use `wayfind deploy --team <id>` to scaffold a Docker Compose deployment. Long-term, this moves to a hosted service — the architecture supports local, self-hosted Docker, and cloud modes.
+
+**Container search API (v2.0.45+):** The container also exposes a search API (`POST /api/search`, `GET /api/entry/:id`) authenticated via a shared API key. Team members' local MCP servers (`wayfind-mcp`) proxy semantic search to the container automatically — no Docker required on their end. This means the whole team gets semantic search over the full decision trail without each person running a container.
 
 **Exit criteria:** Someone asks the bot a question and gets a useful answer they would have otherwise had to dig through journals or PRs to find.
 

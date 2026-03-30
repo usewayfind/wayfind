@@ -49,7 +49,7 @@ Record how you actually think about recurring decision types. Examples:
 
 ## Memory Files (load on demand)
 
-Load these from `~/.ai-memory/memory/` when the session topic matches:
+Load these from `~/.claude/memory/` when the session topic matches:
 
 | File | When to load | Summary |
 |------|-------------|---------|
@@ -59,21 +59,21 @@ Load these from `~/.ai-memory/memory/` when the session topic matches:
 
 | Location | Covers |
 |----------|--------|
-| `~/.ai-memory/state.md` | Admin work, non-repo tasks |
-| `~/repos/org/repo/.ai-memory/state.md` | What this repo is about |
+| `~/.claude/state.md` | Admin work, non-repo tasks |
+| `~/repos/org/repo/.claude/state.md` | What this repo is about |
 
 ## Session Protocol
 
 **Start:**
-1. Read this file + the repo's `.ai-memory/state.md`
+1. Read this file + the repo's `.claude/state.md`
 2. Check Memory Files table — load any that match this session's topic
 3. Summarize current state, then ask: **"What's the goal for this session? What does success look like?"**
 
 **Mid-session drift check:** If work diverges from the stated goal, flag it gently and ask whether to stay the course or pivot.
 
 **End (on "stop" / "done" / "pause" / "tomorrow"):**
-1. Update the repo's `.ai-memory/state.md`
+1. Update the repo's `.claude/state.md`
 2. Do NOT update this file's Active Projects table — it is rebuilt automatically by `wayfind status`.
 3. Create/update topic memory files for any significant new cross-repo context
-4. Append to `~/.ai-memory/memory/journal/YYYY-MM-DD.md`
+4. Append to `~/.claude/memory/journal/YYYY-MM-DD.md`
 5. Confirm: **"State saved. Say 'let's continue' next time."**

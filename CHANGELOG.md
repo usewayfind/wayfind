@@ -2,6 +2,27 @@
 
 All notable changes to Wayfind are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.0.45] - 2026-03-30
+
+### Added
+- **Container search API**: the Docker container now exposes `POST /api/search` and `GET /api/entry/:id` on the same port as `/healthz` (default 3141). Authenticated via bearer token from `.wayfind-api-key` in the team-context repo.
+- **API key auto-rotation**: container generates a 256-bit key on startup, rotates daily (configurable via `TEAM_CONTEXT_KEY_ROTATE_SCHEDULE`), and commits the new key to the team-context repo so team members get it on their next `git pull`.
+- **MCP container proxy**: the local MCP server (`wayfind-mcp`) now proxies semantic search to the team's container when `container_endpoint` is configured in `context.json`. On 401 (rotated key), it re-reads the key from the team-context repo and retries automatically. Falls back to local search if the container is unreachable.
+- **`wayfind deploy set-endpoint <url>`**: new CLI subcommand to set the container endpoint URL for team members (e.g., a Tailscale hostname).
+- **`wayfind deploy --team <id>`** now writes `container_endpoint` to `context.json` automatically.
+- Deploy scaffolding resolves deploy directory from the team's registered repo path in `context.json` (no longer hardcoded to `~/.claude/team-context/`).
+- `.env` scaffold slimmed to 3 required keys (`ANTHROPIC_API_KEY`, `GITHUB_TOKEN`, `TEAM_CONTEXT_TENANT_ID`). Full `.env.example` stays as reference.
+- Auto port detection: scans running wayfind containers, picks next available port from 3141.
+- No-Slack mode: set `TEAM_CONTEXT_NO_SLACK=1` to run the container without Slack integration.
+
+## [2.0.44] - 2026-03-29
+
+### Added
+- **Per-team store scoping**: `repoAllowlist` option in `indexJournals()` filters entries at index time so each team's store only contains its own repos.
+- **`wayfind store trim <team-id>`**: retroactive cleanup of cross-team contamination via `trimStore(storePath, allowedPatterns)`.
+- **`context bind` maintains `bound_repos`** in `context.json` automatically (idempotent). Used by `indexJournals` for write-time scoping.
+- 3 new simulation scenarios: store-scope-indexing, store-scope-trim, store-scope-isolation.
+
 ## [2.0.43] - 2026-03-28
 
 ### Fixed

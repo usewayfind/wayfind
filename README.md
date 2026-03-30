@@ -145,9 +145,23 @@ wayfind pull --all        # All configured channels
 | `wayfind journal sync` | Sync journals to team repo |
 | `wayfind onboard <repo>` | Generate onboarding context pack |
 | `wayfind deploy init` | Scaffold Docker deployment |
+| `wayfind deploy --team <id>` | Scaffold per-team Docker deployment |
+| `wayfind deploy set-endpoint <url>` | Set container endpoint for team search |
+| `wayfind deploy list` | List running team containers |
+| `wayfind deploy status` | Check container health |
 | `wayfind migrate-to-plugin` | Remove old hooks (after plugin install) |
 
 Run `wayfind help` for the full list.
+
+---
+
+## MCP Server
+
+Wayfind includes an MCP server (`wayfind-mcp`) that exposes team context to any MCP-compatible AI tool.
+
+**Tools:** `search_context`, `get_entry`, `list_recent`, `get_signals`, `get_team_status`, `get_personas`, `record_feedback`, `add_context`
+
+Auto-registered during `wayfind init`. When a team container is running, the local MCP server proxies semantic search to it automatically — no config needed beyond the team-context repo.
 
 ---
 
@@ -171,6 +185,8 @@ Run `wayfind help` for the full list.
 | `TEAM_CONTEXT_DIGEST_SCHEDULE` | Cron schedule (default: `0 8 * * 1` — Monday 8am) |
 | `TEAM_CONTEXT_EXCLUDE_REPOS` | Repos to exclude from digests |
 | `TEAM_CONTEXT_TELEMETRY` | `true` for anonymous usage telemetry |
+| `TEAM_CONTEXT_NO_SLACK` | Run container without Slack integration (set to `1`) |
+| `TEAM_CONTEXT_KEY_ROTATE_SCHEDULE` | API key rotation cron (default: `0 2 * * *`) |
 
 ---
 
@@ -182,6 +198,7 @@ Run `wayfind help` for the full list.
 | Claude Code | Full support (npm) | `wayfind init` |
 | Cursor | Session protocol | `wayfind init-cursor` |
 | Generic | Manual | See `specializations/generic/` |
+| Any MCP client | Full support (MCP) | `wayfind init` auto-registers |
 
 ---
 
@@ -198,6 +215,8 @@ Everything that runs on your machine is open source (Apache 2.0).
 | Digest generation (your API key) | |
 | Slack bot (self-hosted) | |
 | Multi-team support | |
+| MCP server (local + container proxy) | |
+| Per-team content store isolation | |
 
 See [LICENSING.md](LICENSING.md) for details.
 

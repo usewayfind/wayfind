@@ -19,7 +19,6 @@ fi
 WAYFIND="$(command -v wayfind 2>/dev/null || echo "")"
 if [ -z "$WAYFIND" ]; then
   for candidate in \
-    "$HOME/repos/greg/wayfind/bin/team-context.js" \
     "$HOME/repos/wayfind/bin/team-context.js"; do
     if [ -f "$candidate" ]; then
       WAYFIND="node $candidate"

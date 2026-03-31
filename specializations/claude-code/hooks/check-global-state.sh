@@ -9,12 +9,8 @@
 
 set -euo pipefail
 
-# Use local wayfind checkout if available, otherwise try npx
-WAYFIND_BIN="$HOME/repos/greg/wayfind/bin/team-context.js"
-if [ -f "$WAYFIND_BIN" ]; then
-    node "$WAYFIND_BIN" status --write --quiet 2>/dev/null || true
-    node "$WAYFIND_BIN" check-version 2>/dev/null || true
-elif command -v wayfind >/dev/null 2>&1; then
+# Use installed wayfind CLI
+if command -v wayfind >/dev/null 2>&1; then
     wayfind status --write --quiet 2>/dev/null || true
     wayfind check-version 2>/dev/null || true
 fi

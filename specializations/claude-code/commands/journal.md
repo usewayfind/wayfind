@@ -32,14 +32,14 @@ bash ~/.claude/team-context/journal-summary.sh --dir ~/.ai-memory/memory/journal
 
 ## Step 2: If journal-summary.sh is not installed
 
-Run setup.sh with `--update` to install it:
+Run `wayfind update` to install it:
 ```bash
-bash ~/repos/greg/wayfind/setup.sh --tool claude-code --update
+wayfind update
 ```
 
-Or install manually:
+Or install manually from the npm package:
 ```bash
-cp ~/repos/greg/wayfind/journal-summary.sh ~/.claude/team-context/journal-summary.sh
+cp "$(npm root -g)/wayfind/journal-summary.sh" ~/.claude/team-context/journal-summary.sh
 chmod +x ~/.claude/team-context/journal-summary.sh
 ```
 

@@ -275,9 +275,7 @@ check_team_context_freshness() {
 
     # Find team-context path via wayfind CLI
     local TEAM_PATH=""
-    if [ -f "$HOME/repos/greg/wayfind/bin/team-context.js" ]; then
-        TEAM_PATH=$(node "$HOME/repos/greg/wayfind/bin/team-context.js" context show 2>/dev/null | grep 'Path:' | head -1 | sed 's/.*Path: *//' || true)
-    elif command -v wayfind >/dev/null 2>&1; then
+    if command -v wayfind >/dev/null 2>&1; then
         TEAM_PATH=$(wayfind context show 2>/dev/null | grep 'Path:' | head -1 | sed 's/.*Path: *//' || true)
     fi
 
@@ -337,9 +335,7 @@ check_team_versions() {
 
     # Check min_version from check-version command output
     local CHECK_OUTPUT=""
-    if [ -f "$HOME/repos/greg/wayfind/bin/team-context.js" ]; then
-        CHECK_OUTPUT=$(node "$HOME/repos/greg/wayfind/bin/team-context.js" check-version 2>&1 || true)
-    elif command -v wayfind >/dev/null 2>&1; then
+    if command -v wayfind >/dev/null 2>&1; then
         CHECK_OUTPUT=$(wayfind check-version 2>&1 || true)
     fi
 

@@ -10,15 +10,9 @@ Show a daily standup summary from journals and state files.
 
 ```bash
 # Current repo only (default)
-node ~/repos/greg/wayfind/bin/team-context.js standup
+wayfind standup
 
 # All repos
-node ~/repos/greg/wayfind/bin/team-context.js standup --all
-```
-
-If the local checkout isn't available:
-```bash
-wayfind standup
 wayfind standup --all
 ```
 

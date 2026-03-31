@@ -1,6 +1,6 @@
 #!/bin/bash
 # Daily memory systems comparison report — posts to Slack via bot token.
-# Add to crontab: 43 8 * * * /home/greg/repos/greg/wayfind/bin/memory-report.sh
+# Add to crontab: 43 8 * * * $(which wayfind | xargs dirname)/memory-report.sh
 #
 # Runs on host (needs access to ~/.claude/projects for auto-memory).
 # Pulls SLACK_BOT_TOKEN from the wayfind container if not set locally.

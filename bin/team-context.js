@@ -327,28 +327,134 @@ async function teamCreate() {
 }
 
 async function teamJoin(args) {
-  const teamId = args[0];
-  if (!teamId) {
-    console.error('Error: team ID is required.');
-    console.error('Usage: wayfind team join <team-id>');
+  const input = args[0];
+  if (!input) {
+    console.error('Error: repo URL or path is required.');
+    console.error('Usage: wayfind team join <repo-url-or-path>');
+    console.error('Example: wayfind team join https://github.com/acme/team-context');
     process.exit(1);
   }
 
-  const team = {
-    teamId,
-    joined: new Date().toISOString(),
+  // Determine if input is a URL to clone or a local path
+  const isUrl = /^https?:\/\/|^git@|^github\.com\//.test(input);
+  let repoPath;
+
+  if (isUrl) {
+    // Parse org/repo from URL for clone destination suggestion
+    const urlMatch = input.match(/[:/]([^/]+)\/([^/.]+?)(?:\.git)?$/);
+    if (!urlMatch) {
+      console.error(`Could not parse org/repo from URL: ${input}`);
+      process.exit(1);
+    }
+    const [, org, repo] = urlMatch;
+    const orgDir = path.join(HOME, 'repos', org);
+    const suggested = fs.existsSync(orgDir)
+      ? path.join(orgDir, repo)
+      : path.join(HOME, '.claude', 'team-context', repo);
+
+    let dest = suggested;
+    if (fs.existsSync(suggested)) {
+      console.log(`\nRepo already cloned at: ${suggested}`);
+      const useExisting = await ask(`Use existing clone? [Y/n]: `);
+      if (useExisting.toLowerCase() === 'n') {
+        const custom = await ask(`Clone to [${suggested}]: `);
+        dest = custom ? path.resolve(custom.replace(/^~/, HOME)) : suggested;
+      }
+    } else {
+      const confirm = await ask(`\nClone to ${suggested}? [Y/n]: `);
+      if (confirm.toLowerCase() === 'n') {
+        const custom = await ask(`Clone to: `);
+        if (!custom) { console.error('Destination required.'); process.exit(1); }
+        dest = path.resolve(custom.replace(/^~/, HOME));
+      }
+      console.log(`Cloning ${input}...`);
+      const cloneUrl = /^https?:\/\//.test(input) ? input : `https://${input}`;
+      const result = spawnSync('git', ['clone', cloneUrl, dest], { stdio: 'inherit' });
+      if (result.status !== 0) {
+        console.error('Clone failed.');
+        process.exit(1);
+      }
+    }
+    repoPath = dest;
+  } else {
+    repoPath = path.resolve(input.replace(/^~/, HOME));
+    if (!fs.existsSync(repoPath)) {
+      console.error(`Directory not found: ${repoPath}`);
+      process.exit(1);
+    }
+  }
+
+  // Read wayfind.json from the repo
+  const sharedConfig = readJSONFile(path.join(repoPath, 'wayfind.json')) || {};
+  const teamId = sharedConfig.team_id;
+  if (!teamId) {
+    console.error('');
+    console.error(`Error: wayfind.json in that repo has no team_id.`);
+    console.error('Ask your team admin to run:');
+    console.error(`  wayfind context add <team-id> ${repoPath}`);
+    process.exit(1);
+  }
+  const teamName = sharedConfig.team_name || teamId;
+  const containerEndpoint = sharedConfig.container_endpoint || null;
+
+  // Register in local context.json
+  const config = readContextConfig();
+  if (!config.teams) config.teams = {};
+  const existing = config.teams[teamId];
+  config.teams[teamId] = {
+    path: repoPath,
+    name: teamName,
+    configured_at: new Date().toISOString(),
+    ...(containerEndpoint ? { container_endpoint: containerEndpoint } : {}),
+    ...(existing && existing.bound_repos ? { bound_repos: existing.bound_repos } : {}),
   };
+  if (!config.default) config.default = teamId;
+  writeContextConfig(config);
 
-  writeJSONFile(TEAM_FILE, team);
+  // Check API key status
+  const keyFile = path.join(repoPath, '.wayfind-api-key');
+  const keyReady = fs.existsSync(keyFile) && (() => {
+    try { return fs.readFileSync(keyFile, 'utf8').trim().length >= 32; } catch { return false; }
+  })();
+
+  // Print confirmation
   console.log('');
-  console.log(`Joined team ${teamId}.`);
+  console.log(`Joined team '${teamName}' (${teamId})`);
+  console.log(`  Repo:             ${repoPath}`);
+  if (containerEndpoint) {
+    console.log(`  Semantic search:  available  |  ${containerEndpoint}`);
+  } else {
+    console.log(`  Semantic search:  not configured`);
+    console.log(`                    Ask your team admin: wayfind deploy set-endpoint ${teamId} <url>`);
+  }
+  if (keyReady) {
+    console.log(`  Search API key:   ready — rotates daily, committed to team repo`);
+  } else {
+    console.log(`  Search API key:   pending — will appear after the container's first key rotation`);
+    console.log(`                    Run \`git pull\` in ${repoPath} after the container starts`);
+  }
+  console.log('');
+  console.log('How the search key works:');
+  console.log('  The container rotates this key every 24 hours and commits it to the team repo.');
+  console.log('  Your Claude Code sessions read the latest key automatically from the cloned repo.');
+  console.log('  You never need to manage it — just keep the repo up to date (git pull).');
+  console.log('');
+  console.log('Next: bind your repos to this team with:');
+  console.log(`  wayfind context bind ${teamId}   (run from each repo you work in)`);
 
+  if (existing) {
+    console.log('');
+    console.log(`  (Updated existing registration for team ${teamId})`);
+  }
+
+  // Register profile in team directory
   const profile = readJSONFile(PROFILE_FILE);
   if (profile) {
     syncMemberToRegistry(profile, teamId);
     await announceToSlack(profile, teamId);
   } else {
-    console.log("  Run 'wayfind whoami --setup' to register in the team directory.");
+    console.log('');
+    console.log("Run 'wayfind whoami --setup' to register your profile in the team directory.");
   }
   console.log('');
 }
@@ -3549,9 +3655,20 @@ function contextAdd(args) {
   const config = readContextConfig();
   if (!config.teams) config.teams = {};
 
-  // Try to read team name from the repo's wayfind.json
-  const sharedConfig = readJSONFile(path.join(resolved, 'wayfind.json')) || {};
+  // Read and update wayfind.json in the repo — write team_id/team_name so joiners
+  // can read them without needing to know the ID out of band
+  const sharedConfigPath = path.join(resolved, 'wayfind.json');
+  const sharedConfig = readJSONFile(sharedConfigPath) || {};
   const teamName = sharedConfig.team_name || teamId;
+  if (!sharedConfig.team_id || !sharedConfig.team_name) {
+    sharedConfig.team_id = teamId;
+    sharedConfig.team_name = teamName;
+    try {
+      fs.writeFileSync(sharedConfigPath, JSON.stringify(sharedConfig, null, 2) + '\n');
+    } catch (err) {
+      console.error(`Warning: could not write wayfind.json: ${err.message}`);
+    }
+  }
 
   config.teams[teamId] = {
     path: resolved,
@@ -3565,6 +3682,23 @@ function contextAdd(args) {
   console.log(`  Path: ${resolved}`);
   if (Object.keys(config.teams).length === 1) {
     console.log('  Set as default (only team).');
+  }
+
+  // Generate first search API key if one doesn't exist yet
+  const keyFile = path.join(resolved, '.wayfind-api-key');
+  if (!fs.existsSync(keyFile)) {
+    const key = crypto.randomBytes(32).toString('hex');
+    try {
+      fs.writeFileSync(keyFile, key + '\n', 'utf8');
+      // Resolve token for git push (CLI context — use gh CLI)
+      const token = detectGitHubToken();
+      if (token && !process.env.GITHUB_TOKEN) process.env.GITHUB_TOKEN = token;
+      pushApiKey(resolved);
+      console.log('  Generated initial search API key → committed to team repo.');
+      console.log('  Teammates who join will read it automatically. It rotates daily.');
+    } catch (err) {
+      console.error(`  Warning: could not generate API key: ${err.message}`);
+    }
   }
 }
 
@@ -5932,8 +6066,8 @@ function showHelp() {
   console.log('  /doctor                        Check installation health');
   console.log('');
   console.log('Team setup:');
-  console.log('  wayfind team create           Create a new team');
-  console.log('  wayfind team join <id>        Join an existing team');
+  console.log('  wayfind team create                    Create a new team');
+  console.log('  wayfind team join <repo-url-or-path>  Join an existing team');
   console.log('  wayfind team status           Show current team info');
   console.log('  wayfind whoami                Show your profile');
   console.log('  wayfind whoami --setup        Set up your profile and personas');

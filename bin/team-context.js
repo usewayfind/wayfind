@@ -4841,7 +4841,7 @@ async function pullTeamContext() {
   }
 
   try {
-    const result = spawnSync('git', ['pull', '--rebase', '--autostash', '-q'], {
+    const result = spawnSync('git', ['pull', '--rebase', '-q'], {
       cwd: teamDir,
       env,
       timeout: 30000,

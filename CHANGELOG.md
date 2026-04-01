@@ -2,6 +2,11 @@
 
 All notable changes to Wayfind are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.0.53] - 2026-04-01
+
+### Fixed
+- Container scheduler `git pull` no longer uses `--autostash` — the flag requires a configured git committer identity, which the container doesn't have, producing a "Committer identity unknown" warning on every reindex cycle. Reverted to `--rebase` only, which is sufficient since the container never makes local edits (#171)
+
 ## [2.0.52] - 2026-04-01
 
 ### Fixed

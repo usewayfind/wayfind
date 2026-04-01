@@ -2,6 +2,11 @@
 
 All notable changes to Wayfind are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.0.52] - 2026-04-01
+
+### Fixed
+- Container scheduler `git pull` now uses `--rebase --autostash` instead of `--ff-only` — diverged branches no longer produce warnings on every reindex cycle (#171)
+
 ## [2.0.51] - 2026-04-01
 
 ### Fixed

@@ -2,6 +2,11 @@
 
 All notable changes to Wayfind are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.0.54] - 2026-04-01
+
+### Fixed
+- `wayfind update` container restart now uses `docker compose up --force-recreate` — previously, if the old container hadn't been fully removed, the restart would fail with a "container name already in use" conflict error
+
 ## [2.0.53] - 2026-04-01
 
 ### Fixed

@@ -5762,7 +5762,7 @@ const COMMANDS = {
               console.log(`\nUpdating ${containerName} (compose: ${composeDir})...`);
               const pullResult = spawnSync('docker', ['compose', 'pull'], { cwd: composeDir, stdio: 'inherit' });
               if (!pullResult.error && pullResult.status === 0) {
-                spawnSync('docker', ['compose', 'up', '-d'], { cwd: composeDir, stdio: 'inherit' });
+                spawnSync('docker', ['compose', 'up', '-d', '--force-recreate'], { cwd: composeDir, stdio: 'inherit' });
                 console.log(`${containerName} updated.`);
 
                 // Post-deploy smoke check

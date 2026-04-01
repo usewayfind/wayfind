@@ -356,6 +356,59 @@ async function detect() {
 
 const OPENAI_EMBEDDINGS_URL = 'https://api.openai.com/v1/embeddings';
 const DEFAULT_EMBEDDING_MODEL = 'text-embedding-3-small';
+const LOCAL_EMBEDDING_MODEL = 'Xenova/all-MiniLM-L6-v2';
+
+// Cached pipeline instance — expensive to initialize, reuse across calls.
+let _localPipeline = null;
+
+/**
+ * Try to generate an embedding using the local ONNX model (@xenova/transformers).
+ * Returns null if the package is not installed or the model fails to load.
+ * Downloads the model (~80MB) on first use into the transformers cache.
+ * @param {string} text
+ * @returns {Promise<number[]|null>}
+ */
+async function generateEmbeddingLocal(text) {
+  try {
+    if (!_localPipeline) {
+      // Dynamic require — optional dep, may not be installed
+      const { pipeline, env } = require('@xenova/transformers');
+      // Suppress progress output in non-interactive contexts
+      if (!process.stdout.isTTY) {
+        env.allowLocalModels = false;
+      }
+      process.stderr.write('[wayfind] Loading local embedding model (first use — may take a moment)...\n');
+      _localPipeline = await pipeline('feature-extraction', LOCAL_EMBEDDING_MODEL);
+    }
+    const output = await _localPipeline(text, { pooling: 'mean', normalize: true });
+    return Array.from(output.data);
+  } catch (_) {
+    return null;
+  }
+}
+
+/**
+ * Detect which embedding provider is active based on env vars and installed packages.
+ * Returns an object describing the provider so callers can surface this to users.
+ * @returns {{ provider: string, model: string, requiresKey: boolean, available: boolean }}
+ */
+function getEmbeddingProviderInfo() {
+  if (isSimulation()) {
+    return { provider: 'simulation', model: 'fake-1536d', requiresKey: false, available: true };
+  }
+  if (process.env.AZURE_OPENAI_EMBEDDING_ENDPOINT) {
+    const hasKey = !!process.env.AZURE_OPENAI_EMBEDDING_KEY;
+    return { provider: 'azure', model: process.env.AZURE_OPENAI_EMBEDDING_DEPLOYMENT || 'text-embedding-3-small', requiresKey: true, available: hasKey };
+  }
+  if (process.env.OPENAI_API_KEY) {
+    return { provider: 'openai', model: DEFAULT_EMBEDDING_MODEL, requiresKey: true, available: true };
+  }
+  try {
+    require.resolve('@xenova/transformers');
+    return { provider: 'local', model: LOCAL_EMBEDDING_MODEL, requiresKey: false, available: true };
+  } catch (_) {}
+  return { provider: 'none', model: null, requiresKey: false, available: false };
+}
 
 /**
  * Generate an embedding vector for the given text.
@@ -392,7 +445,14 @@ async function generateEmbedding(text, options = {}) {
   const apiKeyEnv = options.apiKeyEnv || 'OPENAI_API_KEY';
   const apiKey = process.env[apiKeyEnv];
   if (!apiKey) {
-    throw new Error(`Embeddings: Missing API key. Set ${apiKeyEnv} environment variable.`);
+    // No cloud key — try local model before failing
+    const localVec = await generateEmbeddingLocal(text);
+    if (localVec !== null) return localVec;
+    throw new Error(
+      'Embeddings: No provider configured.\n' +
+      '  Option 1 (cloud): set OPENAI_API_KEY or AZURE_OPENAI_EMBEDDING_ENDPOINT\n' +
+      '  Option 2 (local, no key): npm install -g @xenova/transformers'
+    );
   }
 
   const baseUrl = options.baseUrl || OPENAI_EMBEDDINGS_URL.replace('/embeddings', '');
@@ -477,5 +537,6 @@ module.exports = {
   call,
   detect,
   generateEmbedding,
+  getEmbeddingProviderInfo,
   isSimulation,
 };

@@ -45,6 +45,53 @@ Check if `.claude/wayfind.json` already exists in the repo.
 
 **Verify `.gitignore` coverage:** `.claude/wayfind.json` must be gitignored. Step 3 already includes it in the required entries — confirm this is still the case. If someone removed it, Step 3 will restore it.
 
+## Step 1.7: Embedding provider (first-time only)
+
+Read `~/.claude/team-context/context.json`. Check for an `embedding_provider` field.
+
+**If `embedding_provider` is already set:** Skip this step silently.
+
+**If not set:** Present the following choice to the user:
+
+```
+Wayfind uses embeddings for semantic search (e.g. "find the auth refactor discussion").
+
+Choose your embedding provider:
+
+  1. Local model (recommended for getting started)
+     - No API key needed
+     - ~80MB download on first use, cached after that
+     - Works offline
+     - Good quality for most queries
+
+  2. OpenAI (higher quality)
+     - Requires OPENAI_API_KEY
+     - ~$0/month at normal usage
+     - Best retrieval quality
+
+  3. Azure OpenAI
+     - Requires AZURE_OPENAI_EMBEDDING_ENDPOINT + key
+     - For enterprise deployments
+
+⚠️  Switching providers later requires reindexing your content store.
+    Run: wayfind reindex --force
+    Embeddings are model-specific — mixing models breaks semantic search.
+
+Which provider? [1/2/3, default: 1]
+```
+
+Wait for their answer (default to 1 if they press enter). Write their choice to `~/.claude/team-context/context.json` as:
+
+```json
+{ "embedding_provider": "local" }   // for choice 1
+{ "embedding_provider": "openai" }  // for choice 2
+{ "embedding_provider": "azure" }   // for choice 3
+```
+
+(Merge into existing context.json — do not overwrite other fields.)
+
+Report: "Embedding provider set to: <name>"
+
 ## Step 2: Create state files (if missing)
 
 This repo uses TWO state files with different visibility:

@@ -2,6 +2,15 @@
 
 All notable changes to Wayfind are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.0.50] - 2026-04-01
+
+### Added
+- **Local embedding model**: `@xenova/transformers` (`all-MiniLM-L6-v2`) is now the default embedding provider — no API key required for semantic search (#170). First use downloads the model (~80MB, cached after). Provider auto-detection order: Azure OpenAI → OpenAI → local model → full-text fallback.
+- **Team journals indexed on `context pull`**: `wayfind context pull` now automatically indexes new team-context repo journals into the local content store after a successful git pull. Team-wide semantic search works via local stdio MCP server with no container required.
+- **Embedding model tracking**: the content store records which model generated embeddings (`embedding_model` field in the index). `wayfind doctor` warns when the current provider doesn't match stored embeddings. `wayfind reindex --force` shows a clear mismatch warning explaining what will be cleared and regenerated.
+- **Provider selection in `init-memory` and `init-team`**: first-time setup prompts for embedding provider choice with explicit tradeoff explanation (local vs OpenAI vs Azure) and switching cost warning.
+- **`wayfind doctor` embedding provider check**: reports active provider and model; warns when no provider is configured or when model mismatch is detected.
+
 ## [2.0.49] - 2026-04-01
 
 ### Fixed

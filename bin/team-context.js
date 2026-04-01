@@ -38,6 +38,7 @@ const digest = require('./digest');
 const slack = require('./slack');
 const slackBot = require('./slack-bot');
 const contentStore = require('./content-store');
+const llm = require('./connectors/llm');
 const rebuildStatus = require('./rebuild-status');
 const telemetry = require('./telemetry');
 
@@ -1310,7 +1311,20 @@ async function runReindex(args) {
   const force = args.includes('--force');
 
   if (force) {
-    console.log('Force mode: clearing content store for full reindex...');
+    // Warn if stored embeddings used a different model than the current provider
+    const storedModel = contentStore.getStoredEmbeddingModel();
+    const currentProvider = llm.getEmbeddingProviderInfo();
+    if (storedModel && currentProvider.model && storedModel !== currentProvider.model) {
+      console.log(`⚠️  Embedding model mismatch:`);
+      console.log(`   Stored embeddings: ${storedModel}`);
+      console.log(`   Current provider:  ${currentProvider.model} (${currentProvider.provider})`);
+      console.log(`   All embeddings will be cleared and regenerated with the current provider.`);
+      console.log(`   Entries without embeddings will fall back to full-text search until reindexed.`);
+    } else if (storedModel) {
+      console.log(`Force mode: clearing content store — will regenerate ${storedModel} embeddings...`);
+    } else {
+      console.log('Force mode: clearing content store for full reindex...');
+    }
     try {
       const backend = contentStore.getBackend();
       const emptyIndex = { version: contentStore.INDEX_VERSION, entries: {}, lastUpdated: Date.now(), entryCount: 0 };
@@ -3581,7 +3595,7 @@ function contextSync() {
  *
  * @param {string[]} args - CLI arguments (--quiet suppresses output)
  */
-function contextPull(args) {
+async function contextPull(args) {
   const quiet = args.includes('--quiet');
   const background = args.includes('--background');
   const log = quiet ? () => {} : console.log;
@@ -3614,6 +3628,16 @@ function contextPull(args) {
     log('[wayfind] Pulled latest team-context');
     // Mark success — doctor checks this to warn on prolonged failures
     try { fs.writeFileSync(markerFile, new Date().toISOString()); } catch {}
+    // Index any new team journals into the local content store
+    const journalsDir = path.join(teamPath, 'journals');
+    if (fs.existsSync(journalsDir)) {
+      try {
+        const stats = await contentStore.indexJournals({ journalDir: journalsDir });
+        if (!quiet && stats.newEntries > 0) {
+          log(`[wayfind] Indexed ${stats.newEntries} new team journal entries`);
+        }
+      } catch (_) {}
+    }
   } else if (result.error && result.error.code === 'ETIMEDOUT') {
     log('[wayfind] Team-context pull timed out — using local state');
   } else {
@@ -5404,10 +5428,46 @@ async function runContainerDoctor() {
         console.log('       Run: wayfind reindex');
         issues++;
       }
+
+      // Embedding provider + model mismatch check
+      try {
+        const providerInfo = llm.getEmbeddingProviderInfo();
+        const storedModel = contentStore.getStoredEmbeddingModel(storePath);
+        if (!providerInfo.available) {
+          warn('Embedding provider: none configured — semantic search unavailable (full-text only)');
+          console.log('       Option 1 (cloud): set OPENAI_API_KEY');
+          console.log('       Option 2 (local, no key): npm install -g @xenova/transformers');
+          issues++;
+        } else {
+          const label = providerInfo.provider === 'local'
+            ? `local (${providerInfo.model}) — no API key required`
+            : `${providerInfo.provider} (${providerInfo.model})`;
+          pass(`Embedding provider: ${label}`);
+          if (storedModel && providerInfo.model && storedModel !== providerInfo.model) {
+            warn(`Embedding model mismatch: stored=${storedModel}, current=${providerInfo.model}`);
+            console.log('       Semantic search results may be degraded — stored embeddings are from a different model.');
+            console.log('       Fix: wayfind reindex --force  (clears and regenerates all embeddings)');
+            issues++;
+          }
+        }
+      } catch (_) {}
     } catch (e) {
       warn(`Embedding coverage: error — ${e.message}`);
       issues++;
     }
+  }
+
+  // ── Embedding provider (standalone, when no entries yet) ───────────────────
+  if (entryCount === 0) {
+    try {
+      const providerInfo = llm.getEmbeddingProviderInfo();
+      if (!providerInfo.available) {
+        warn('Embedding provider: none — semantic search will not be available');
+        console.log('       Option 1 (cloud): set OPENAI_API_KEY');
+        console.log('       Option 2 (local, no key): npm install -g @xenova/transformers');
+        issues++;
+      }
+    } catch (_) {}
   }
 
   // 4. Signal freshness — are there signal files from today?

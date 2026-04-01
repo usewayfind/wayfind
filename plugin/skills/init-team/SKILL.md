@@ -45,6 +45,38 @@ Before starting, verify:
 
 If any prerequisite fails, tell the user what's needed and stop.
 
+## Step 0.5: Embedding Provider
+
+Read `~/.claude/team-context/context.json`. Check for an `embedding_provider` field.
+
+**If already set:** Report the current provider and skip this step.
+
+**If not set:** Present this choice:
+
+```
+Wayfind uses embeddings for semantic search across your team's decision trail.
+
+Choose your embedding provider:
+
+  1. Local model (recommended for getting started)
+     - No API key needed, works offline
+     - ~80MB download on first use, cached after
+     - Good quality for most queries
+
+  2. OpenAI (higher quality)
+     - Requires OPENAI_API_KEY (~$0/month at normal usage)
+
+  3. Azure OpenAI
+     - Requires AZURE_OPENAI_EMBEDDING_ENDPOINT + key
+
+⚠️  Switching providers later requires reindexing: wayfind reindex --force
+    Embeddings are model-specific — changing models after indexing breaks semantic search.
+
+Which provider? [1/2/3, default: 1]
+```
+
+Write choice to `~/.claude/team-context/context.json` as `embedding_provider: "local"|"openai"|"azure"`.
+
 ## Step 1: Team Context Repo
 
 This repo holds shared journals, strategy state, digest archives, and the GitHub

@@ -426,7 +426,7 @@ async function indexJournals(options = {}) {
   const storePath = options.storePath || resolveStorePath();
   const doEmbeddings = options.embeddings !== undefined
     ? options.embeddings
-    : !!(process.env.OPENAI_API_KEY || process.env.AZURE_OPENAI_EMBEDDING_ENDPOINT || llm.isSimulation());
+    : !!(process.env.OPENAI_API_KEY || process.env.AZURE_OPENAI_EMBEDDING_ENDPOINT || llm.isSimulation() || llm.getEmbeddingProviderInfo().available);
 
   if (!journalDir || !storePath) {
     throw new Error('Journal directory and store path are required.');
@@ -546,11 +546,13 @@ async function indexJournals(options = {}) {
   stats.entryCount = Object.keys(finalEntries).length;
 
   // Save
+  const embeddingModel = doEmbeddings ? llm.getEmbeddingProviderInfo().model : null;
   const index = {
     version: INDEX_VERSION,
     lastUpdated: Date.now(),
     entryCount: stats.entryCount,
     entries: finalEntries,
+    ...(embeddingModel ? { embedding_model: embeddingModel } : {}),
   };
 
   backend.saveIndex(index);
@@ -563,6 +565,7 @@ async function indexJournals(options = {}) {
     entry_count: stats.entryCount,
     new_entries: stats.newEntries,
     has_embeddings: doEmbeddings,
+    embedding_model: embeddingModel,
   });
 
   return stats;
@@ -1375,7 +1378,7 @@ async function indexConversations(options = {}) {
   const storePath = options.storePath || resolveStorePath();
   const doEmbeddings = options.embeddings !== undefined
     ? options.embeddings
-    : !!(process.env.OPENAI_API_KEY || process.env.AZURE_OPENAI_EMBEDDING_ENDPOINT || llm.isSimulation());
+    : !!(process.env.OPENAI_API_KEY || process.env.AZURE_OPENAI_EMBEDDING_ENDPOINT || llm.isSimulation() || llm.getEmbeddingProviderInfo().available);
 
   if (!projectsDir || !storePath) {
     throw new Error('Projects directory and store path are required.');
@@ -1566,6 +1569,10 @@ async function indexConversations(options = {}) {
 
   // Save everything
   existingIndex.entryCount = Object.keys(existingIndex.entries).length;
+  if (doEmbeddings) {
+    const model = llm.getEmbeddingProviderInfo().model;
+    if (model) existingIndex.embedding_model = model;
+  }
   backend.saveIndex(existingIndex);
   if (doEmbeddings) {
     backend.saveEmbeddings(existingEmbeddings);
@@ -1801,7 +1808,7 @@ async function indexSignals(options = {}) {
   const storePath = options.storePath || resolveStorePath();
   const doEmbeddings = options.embeddings !== undefined
     ? options.embeddings
-    : !!(process.env.OPENAI_API_KEY || process.env.AZURE_OPENAI_EMBEDDING_ENDPOINT || llm.isSimulation());
+    : !!(process.env.OPENAI_API_KEY || process.env.AZURE_OPENAI_EMBEDDING_ENDPOINT || llm.isSimulation() || llm.getEmbeddingProviderInfo().available);
 
   if (!signalsDir || !storePath) {
     throw new Error('Signals directory and store path are required.');
@@ -2076,6 +2083,10 @@ async function indexSignals(options = {}) {
 
   // Save
   existingIndex.entryCount = Object.keys(existingIndex.entries).length;
+  if (doEmbeddings) {
+    const model = llm.getEmbeddingProviderInfo().model;
+    if (model) existingIndex.embedding_model = model;
+  }
   backend.saveIndex(existingIndex);
   if (doEmbeddings) {
     backend.saveEmbeddings(existingEmbeddings);
@@ -2376,6 +2387,12 @@ module.exports = {
   saveIndex: (storePath, index) => getBackend(storePath || resolveStorePath()).saveIndex(index),
   loadEmbeddings: (storePath) => getBackend(storePath || resolveStorePath()).loadEmbeddings(),
   saveEmbeddings: (storePath, embeddings) => getBackend(storePath || resolveStorePath()).saveEmbeddings(embeddings),
+  getStoredEmbeddingModel: (storePath) => {
+    try {
+      const idx = getBackend(storePath || resolveStorePath()).loadIndex();
+      return idx ? (idx.embedding_model || null) : null;
+    } catch { return null; }
+  },
   loadConversationIndex: (storePath) => getBackend(storePath || resolveStorePath()).loadConversationIndex(),
   saveConversationIndex: (storePath, convIndex) => getBackend(storePath || resolveStorePath()).saveConversationIndex(convIndex),
 

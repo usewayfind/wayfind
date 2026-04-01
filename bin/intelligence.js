@@ -59,12 +59,21 @@ function splitAndLabel(content, startId) {
  * @param {Object} llmConfig - LLM config for the scoring call
  * @returns {Promise<Array<{id: number, [personaId]: number}>|null>} Scores array or null on failure
  */
+// Maximum characters to send to the scoring LLM in a single call.
+// Beyond this, scoring is skipped and budget truncation handles content selection.
+const SCORE_MAX_CHARS = 40000;
+
 async function scoreItems(signalContent, journalContent, personas, llmConfig) {
   const signalResult = splitAndLabel(signalContent, 0);
   const journalResult = splitAndLabel(journalContent, signalResult.items.length);
 
   const totalItems = signalResult.items.length + journalResult.items.length;
   if (totalItems === 0) return null;
+
+  // Skip scoring if content is too large for a reliable single LLM call.
+  // The token budget step will handle content selection without scoring.
+  const totalChars = (signalResult.labeled || '').length + (journalResult.labeled || '').length;
+  if (totalChars > SCORE_MAX_CHARS) return null;
 
   const systemPrompt = buildScoringPrompt(personas);
 

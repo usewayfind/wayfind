@@ -425,7 +425,7 @@ async function teamJoin(args) {
     console.log(`  Semantic search:  available  |  ${containerEndpoint}`);
   } else {
     console.log(`  Semantic search:  not configured`);
-    console.log(`                    Ask your team admin: wayfind deploy set-endpoint ${teamId} <url>`);
+    console.log(`                    Ask your team admin: wayfind deploy set-endpoint <url> --team ${teamId}`);
   }
   if (keyReady) {
     console.log(`  Search API key:   ready — rotates daily, committed to team repo`);
@@ -1053,12 +1053,26 @@ async function runDigest(args) {
     process.exit(1);
   }
 
+  // Sanitize configured paths — connectors.json may have been written from inside a container
+  // with paths like /home/node/... or /data/... that don't exist on the host. Fall back to
+  // local defaults for any path that doesn't resolve on this machine.
+  const digestConfig = { ...config.digest };
+  if (digestConfig.store_path && !fs.existsSync(digestConfig.store_path)) {
+    digestConfig.store_path = contentStore.resolveStorePath();
+  }
+  if (digestConfig.journal_dir && !fs.existsSync(digestConfig.journal_dir)) {
+    digestConfig.journal_dir = contentStore.DEFAULT_JOURNAL_DIR;
+  }
+  if (digestConfig.signals_dir && !fs.existsSync(digestConfig.signals_dir)) {
+    digestConfig.signals_dir = contentStore.resolveSignalsDir();
+  }
+
   // Generate digests
   console.log(`Generating digests for: ${personaIds.join(', ')}`);
   console.log(`Period: ${sinceDate} to today`);
   console.log('');
 
-  const result = await digest.generateDigest(config.digest, personaIds, sinceDate, (progress) => {
+  const result = await digest.generateDigest(digestConfig, personaIds, sinceDate, (progress) => {
     if (progress.phase === 'start') {
       process.stdout.write(`  ${progress.personaId} (${progress.index + 1}/${progress.total})... `);
     } else if (progress.phase === 'done') {
@@ -2137,6 +2151,15 @@ function journalSync(args) {
 
     if (!teamFiles[teamId]) teamFiles[teamId] = [];
     teamFiles[teamId].push({ file, srcPath: path.join(journalDir, file) });
+  }
+
+  // Always update member version stamp for all registered teams, even if no files to sync.
+  // This ensures the stamp stays current regardless of whether journals are flowing.
+  if (config.teams) {
+    for (const teamId of Object.keys(config.teams)) {
+      const teamPath = getTeamContextPath(teamId);
+      if (teamPath) stampMemberVersion(teamPath);
+    }
   }
 
   if (Object.keys(teamFiles).length === 0) {
@@ -4033,7 +4056,8 @@ function deployTeamInit(teamId, { port } = {}) {
   let composeContent = fs.readFileSync(templatePath, 'utf8');
   composeContent = composeContent
     .replace(/container_name: wayfind/, `container_name: ${containerName}`)
-    .replace(/- "3141:3141"/, `- "${assignedPort}:3141"`);
+    .replace(/- "3141:3141"/, `- "${assignedPort}:3141"`)
+    .replace(/^(services:)/m, `name: ${containerName}\n\n$1`);
 
   // Inject Docker label for discovery
   composeContent = composeContent.replace(
@@ -4824,7 +4848,7 @@ async function indexJournalsIfAvailable() {
     console.log('No journal files found — skipping index.');
     return;
   }
-  const hasEmbeddingKey = !!process.env.OPENAI_API_KEY;
+  const hasEmbeddingKey = !!(process.env.OPENAI_API_KEY || process.env.AZURE_OPENAI_EMBEDDING_ENDPOINT);
   console.log(`Indexing ${entries.length} journal files from ${journalDir}${hasEmbeddingKey ? ' (with embeddings)' : ''}...`);
   try {
     const stats = await contentStore.indexJournals({
@@ -5900,6 +5924,21 @@ const COMMANDS = {
 
       // Also sync public-staging docs if they exist
       const publicDocsDir = path.join(sourceRoot, 'public-staging', 'docs');
+
+      // Keep plugin.json version in sync with package.json before syncing
+      const pluginJsonPath = path.join(sourceRoot, 'plugin', '.claude-plugin', 'plugin.json');
+      const pkgJsonPath = path.join(sourceRoot, 'package.json');
+      if (fs.existsSync(pluginJsonPath) && fs.existsSync(pkgJsonPath)) {
+        try {
+          const pluginJson = JSON.parse(fs.readFileSync(pluginJsonPath, 'utf8'));
+          const pkgJson = JSON.parse(fs.readFileSync(pkgJsonPath, 'utf8'));
+          if (pluginJson.version !== pkgJson.version) {
+            pluginJson.version = pkgJson.version;
+            fs.writeFileSync(pluginJsonPath, JSON.stringify(pluginJson, null, 2) + '\n');
+            console.log(`Updated plugin.json version to ${pkgJson.version}`);
+          }
+        } catch {}
+      }
 
       console.log('Syncing files...');
       for (const item of syncItems) {

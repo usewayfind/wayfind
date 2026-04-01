@@ -37,7 +37,8 @@ LAST_RUN_FILE="$HOME/.claude/team-context/.last-reindex"
 if [ -f "$LAST_RUN_FILE" ]; then
   CHANGED=$(find "$HOME/.claude/projects" -name "*.jsonl" -newer "$LAST_RUN_FILE" -print -quit 2>/dev/null)
   if [ -z "$CHANGED" ]; then
-    # No conversation files changed — skip expensive reindex, just sync journals
+    # No conversation files changed — skip expensive reindex, just split and sync journals
+    $WAYFIND journal split 2>/dev/null
     $WAYFIND journal sync 2>/dev/null &
     exit 0
   fi
@@ -50,5 +51,6 @@ $WAYFIND reindex --conversations-only --export --detect-shifts --write-stats 2>/
 mkdir -p "$HOME/.claude/team-context"
 touch "$LAST_RUN_FILE"
 
-# Sync authored journals to team-context repo (backgrounded)
+# Split any unsuffixed journals, then sync to team-context repo (sync backgrounded)
+$WAYFIND journal split 2>/dev/null
 $WAYFIND journal sync 2>/dev/null &

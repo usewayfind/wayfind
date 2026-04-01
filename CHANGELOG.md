@@ -2,6 +2,38 @@
 
 All notable changes to Wayfind are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.0.49] - 2026-04-01
+
+### Fixed
+- Session-end hook now runs `journal split` before `journal sync` — new team members' existing journals are retroactively tagged and synced on first session end, no manual backfill needed (#163)
+- `wayfind digest` falls back to local default paths when `connectors.json` contains container-internal paths (e.g., `/home/node/...`), so `--preview` works correctly on the host (#162)
+- `wayfind digest --preview` no longer hangs on large content stores — intelligence scoring is skipped when content exceeds a safe threshold, letting the token budget step handle selection instead (#161)
+- Journal indexing on container startup now generates embeddings when `AZURE_OPENAI_EMBEDDING_ENDPOINT` is set, matching the behavior of conversation and signal indexing (#166)
+- `wayfind journal sync` updates the member version stamp even when there are no journal files to sync, keeping team health signals current (#165)
+- `plugin.json` version now stays in sync with `package.json` — `sync-public` updates it automatically going forward (#164)
+
+## [2.0.48] - 2026-03-31
+
+### Added
+- **`wayfind team join <repo-url>`**: full onboarding flow — clones the team-context repo, reads `team_id`/`team_name`/`container_endpoint` from `wayfind.json`, registers the team in `context.json`, reports search API and key status. Works with both HTTPS URLs and local paths (#51)
+- `wayfind context add` now writes `team_id` and `team_name` back to `wayfind.json` and generates the first API key (commits and pushes). Team repos are self-describing for new joiners from day one.
+- `wayfind deploy init` compose template now includes the compose project `name:` field to prevent container name collisions when multiple teams deploy to the same machine.
+
+### Fixed
+- `wayfind deploy set-endpoint` usage string corrected in `team join` output (was `<team-id> <url>`, now `<url> --team <id>`)
+- `TEAM_CONTEXT_TEAM_CONTEXT_DIR` env var now correctly set in team container docker-compose.yml (was `TEAM_CONTEXT_DIR` — old name causing 401s on all container search requests)
+
+## [2.0.47] - 2026-03-31
+
+### Fixed
+- Removed all hardcoded developer paths (`~/repos/greg/wayfind/`) from 7 shipped files — paths now resolved dynamically via the wayfind CLI or `npm root -g` (#159). Affects: `journal.md`, `standup.md`, `check-global-state.sh`, `memory-report.sh`, `session-end.sh`, `session-start.sh`, `doctor.sh`
+
+## [2.0.46] - 2026-03-30
+
+### Added
+- Full documentation refresh across 10 files: `pilot-guide.md`, `dogfood-setup.md`, `FAQ.md`, `README.md`, `BOOTSTRAP_PROMPT.md`, and supporting docs updated to reflect container search API, MCP proxy, and multi-team deploy flow
+- Container search API simulation: `container-search-api.sh` (10 assertions, 4 phases covering API auth, key rotation, MCP proxy fallback, and endpoint configuration)
+
 ## [2.0.45] - 2026-03-30
 
 ### Added

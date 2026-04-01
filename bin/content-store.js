@@ -440,7 +440,26 @@ async function indexJournals(options = {}) {
   const backend = getBackend(storePath);
   const existingIndex = backend.loadIndex();
   const existingEntries = existingIndex ? existingIndex.entries : {};
-  const existingEmbeddings = doEmbeddings ? backend.loadEmbeddings() : {};
+
+  // Detect embedding model mismatch — if the stored model differs from the current
+  // provider, treat all entries as needing re-embedding so the index stays consistent.
+  // A silent auto-migration is better than silently returning garbage similarity scores.
+  const currentProviderInfo = llm.getEmbeddingProviderInfo();
+  const storedEmbeddingModel = existingIndex ? existingIndex.embedding_model : null;
+  const modelChanged = doEmbeddings && storedEmbeddingModel && currentProviderInfo.model &&
+    storedEmbeddingModel !== currentProviderInfo.model;
+  if (modelChanged) {
+    process.stderr.write(
+      `[wayfind] Embedding model changed: ${storedEmbeddingModel} → ${currentProviderInfo.model}\n` +
+      `[wayfind] Re-embedding all entries for consistent search results...\n`
+    );
+    // Mark all existing entries as needing re-embedding
+    for (const entry of Object.values(existingEntries)) {
+      entry.hasEmbedding = false;
+    }
+  }
+
+  const existingEmbeddings = doEmbeddings ? (modelChanged ? {} : backend.loadEmbeddings()) : {};
 
   // Parse all journal files
   const files = fs.readdirSync(journalDir).filter(f => DATE_FILE_RE.test(f)).sort();
@@ -1400,8 +1419,23 @@ async function indexConversations(options = {}) {
   // Load existing indexes
   const backend = getBackend(storePath);
   const existingIndex = backend.loadIndex() || { version: INDEX_VERSION, entries: {}, lastUpdated: Date.now(), entryCount: 0 };
-  const existingEmbeddings = doEmbeddings ? backend.loadEmbeddings() : {};
   const convIndex = backend.loadConversationIndex();
+
+  // Auto-migrate embeddings if model changed
+  const _convProviderInfo = llm.getEmbeddingProviderInfo();
+  const _convStoredModel = existingIndex.embedding_model || null;
+  const _convModelChanged = doEmbeddings && _convStoredModel && _convProviderInfo.model &&
+    _convStoredModel !== _convProviderInfo.model;
+  if (_convModelChanged) {
+    process.stderr.write(
+      `[wayfind] Embedding model changed: ${_convStoredModel} → ${_convProviderInfo.model}\n` +
+      `[wayfind] Re-embedding conversation entries...\n`
+    );
+    for (const entry of Object.values(existingIndex.entries)) {
+      entry.hasEmbedding = false;
+    }
+  }
+  const existingEmbeddings = doEmbeddings ? (_convModelChanged ? {} : backend.loadEmbeddings()) : {};
 
   // Compute since cutoff
   let sinceCutoff = 0;
@@ -1821,7 +1855,18 @@ async function indexSignals(options = {}) {
   // Load existing index (contains journal + conversation entries too)
   const backend = getBackend(storePath);
   const existingIndex = backend.loadIndex() || { version: INDEX_VERSION, entries: {}, lastUpdated: Date.now(), entryCount: 0 };
-  const existingEmbeddings = doEmbeddings ? backend.loadEmbeddings() : {};
+
+  // Auto-migrate embeddings if model changed
+  const _sigProviderInfo = llm.getEmbeddingProviderInfo();
+  const _sigStoredModel = existingIndex.embedding_model || null;
+  const _sigModelChanged = doEmbeddings && _sigStoredModel && _sigProviderInfo.model &&
+    _sigStoredModel !== _sigProviderInfo.model;
+  if (_sigModelChanged) {
+    for (const entry of Object.values(existingIndex.entries)) {
+      entry.hasEmbedding = false;
+    }
+  }
+  const existingEmbeddings = doEmbeddings ? (_sigModelChanged ? {} : backend.loadEmbeddings()) : {};
 
   const stats = { fileCount: 0, newEntries: 0, updatedEntries: 0, skippedEntries: 0 };
 

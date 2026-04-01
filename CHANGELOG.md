@@ -2,6 +2,11 @@
 
 All notable changes to Wayfind are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.0.51] - 2026-04-01
+
+### Fixed
+- Embedding model switch now triggers automatic re-embedding — when `indexJournals`, `indexConversations`, or `indexSignals` detects that the stored model differs from the current provider, all entries are re-embedded with the new model before saving (#170). Previously, a model switch would silently leave old-model vectors in the store and generate query embeddings with the new model, producing garbage similarity scores with no warning.
+
 ## [2.0.50] - 2026-04-01
 
 ### Added

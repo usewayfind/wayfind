@@ -1,5 +1,7 @@
 'use strict';
 
+const fs = require('fs');
+const path = require('path');
 const contentStore = require('./content-store');
 const llm = require('./connectors/llm');
 
@@ -319,6 +321,16 @@ async function distillEntries(options = {}) {
 
           index.entryCount = Object.keys(index.entries).length;
           backend.saveIndex(index);
+
+          // Persist merged content to disk so it survives export/import
+          try {
+            const distilledDir = path.join(storePath, 'distilled');
+            if (!fs.existsSync(distilledDir)) fs.mkdirSync(distilledDir, { recursive: true });
+            fs.writeFileSync(path.join(distilledDir, `${id}.md`), content, 'utf8');
+          } catch (writeErr) {
+            console.log(`    Warning: could not persist distilled content: ${writeErr.message}`);
+          }
+
           totalStats.merged += cluster.length;
         } catch (err) {
           console.log(`    Merge failed for cluster: ${err.message}`);
@@ -343,6 +355,114 @@ async function distillEntries(options = {}) {
   return totalStats;
 }
 
+// ── Export / Import ──────────────────────────────────────────────────────────
+
+/**
+ * Export all LLM-merged distilled entries (with content) from the content store.
+ * Used by the GHA distillation pipeline to commit results back to the team repo.
+ * @param {string} [storePath]
+ * @returns {Array<Object>}
+ */
+function exportDistilled(storePath) {
+  const resolvedPath = storePath || contentStore.resolveStorePath();
+  const backend = contentStore.getBackend(resolvedPath);
+  const index = backend.loadIndex();
+  const distilledDir = path.join(resolvedPath, 'distilled');
+  const entries = [];
+
+  for (const [id, entry] of Object.entries(index.entries || {})) {
+    if (!entry.distilledFrom || !entry.distilledFrom.length) continue;
+
+    let content = null;
+    try {
+      content = fs.readFileSync(path.join(distilledDir, `${id}.md`), 'utf8');
+    } catch { /* content not persisted yet — skip */ }
+    if (!content) continue;
+
+    entries.push({
+      id,
+      date: entry.date,
+      repo: entry.repo,
+      title: entry.title,
+      content,
+      distill_tier: entry.distillTier,
+      distilled_from: entry.distilledFrom,
+      distilled_at: entry.distilledAt,
+      content_hash: entry.contentHash,
+      quality_score: entry.qualityScore || 3,
+      tags: entry.tags || [],
+    });
+  }
+
+  return entries;
+}
+
+/**
+ * Idempotently import distilled entries (from a team repo's distilled.json) into
+ * the local content store. Entries already present (by content_hash) are skipped.
+ * @param {Array<Object>} entries - Array of entries from exportDistilled()
+ * @param {string} [storePath]
+ * @returns {{ imported: number, skipped: number }}
+ */
+function importDistilled(entries, storePath) {
+  const resolvedPath = storePath || contentStore.resolveStorePath();
+  const backend = contentStore.getBackend(resolvedPath);
+  const index = backend.loadIndex();
+  const distilledDir = path.join(resolvedPath, 'distilled');
+
+  const existingHashes = new Set(
+    Object.values(index.entries || {}).map(e => e.contentHash).filter(Boolean)
+  );
+
+  let imported = 0;
+  let skipped = 0;
+
+  for (const entry of entries) {
+    if (existingHashes.has(entry.content_hash)) {
+      skipped++;
+      continue;
+    }
+
+    // Persist content file
+    try {
+      if (!fs.existsSync(distilledDir)) fs.mkdirSync(distilledDir, { recursive: true });
+      fs.writeFileSync(path.join(distilledDir, `${entry.id}.md`), entry.content || '', 'utf8');
+    } catch (writeErr) {
+      console.log(`  Warning: could not write content for ${entry.id}: ${writeErr.message}`);
+      continue;
+    }
+
+    index.entries[entry.id] = {
+      date: entry.date,
+      repo: entry.repo,
+      title: entry.title,
+      source: 'distilled',
+      user: '',
+      drifted: false,
+      contentHash: entry.content_hash,
+      contentLength: (entry.content || '').length,
+      tags: entry.tags || [],
+      hasEmbedding: false,
+      hasReasoning: true,
+      hasAlternatives: false,
+      qualityScore: entry.quality_score || 3,
+      distillTier: entry.distill_tier,
+      distilledFrom: entry.distilled_from,
+      distilledAt: entry.distilled_at,
+    };
+
+    existingHashes.add(entry.content_hash);
+    imported++;
+  }
+
+  if (imported > 0) {
+    index.entryCount = Object.keys(index.entries).length;
+    backend.saveIndex(index);
+  }
+
+  return { imported, skipped };
+}
+
 // ── Exports ─────────────────────────────────────────────────────────────────
 
 module.exports = {
@@ -351,5 +471,7 @@ module.exports = {
   deduplicateGroup,
   mergeEntries,
   titleSimilarity,
+  exportDistilled,
+  importDistilled,
   TIERS,
 };

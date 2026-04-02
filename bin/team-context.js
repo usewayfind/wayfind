@@ -1366,6 +1366,45 @@ async function runReindex(args) {
 
 async function runDistill(args) {
   const distill = require('./distill');
+
+  // Sub-subcommands: export and import
+  const sub = args[0];
+
+  if (sub === 'export') {
+    const outputIdx = args.indexOf('--output');
+    const outputPath = outputIdx !== -1 ? args[outputIdx + 1] : null;
+    const entries = distill.exportDistilled();
+    const payload = JSON.stringify({ version: '1', generated_at: new Date().toISOString(), entries }, null, 2);
+    if (outputPath) {
+      const outDir = path.dirname(outputPath);
+      if (outDir && outDir !== '.') fs.mkdirSync(outDir, { recursive: true });
+      fs.writeFileSync(outputPath, payload, 'utf8');
+      console.log(`Exported ${entries.length} distilled entries → ${outputPath}`);
+    } else {
+      process.stdout.write(payload + '\n');
+    }
+    return;
+  }
+
+  if (sub === 'import') {
+    const filePath = args[1];
+    if (!filePath) {
+      console.error('Usage: wayfind distill import <path/to/distilled.json>');
+      process.exit(1);
+    }
+    let payload;
+    try {
+      payload = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    } catch (err) {
+      console.error(`Could not read ${filePath}: ${err.message}`);
+      process.exit(1);
+    }
+    const entries = Array.isArray(payload) ? payload : (payload.entries || []);
+    const { imported, skipped } = distill.importDistilled(entries);
+    console.log(`Import complete: ${imported} new entries, ${skipped} already present`);
+    return;
+  }
+
   const dryRun = args.includes('--dry-run');
   const tierIdx = args.indexOf('--tier');
   const tier = (tierIdx !== -1 && args[tierIdx + 1]) ? args[tierIdx + 1] : 'daily';
@@ -3635,6 +3674,19 @@ async function contextPull(args) {
         const stats = await contentStore.indexJournals({ journalDir: journalsDir });
         if (!quiet && stats.newEntries > 0) {
           log(`[wayfind] Indexed ${stats.newEntries} new team journal entries`);
+        }
+      } catch (_) {}
+    }
+    // Import distilled entries if the team repo has a distilled.json
+    const distilledJson = path.join(teamPath, '.wayfind', 'distilled.json');
+    if (fs.existsSync(distilledJson)) {
+      try {
+        const { importDistilled } = require('./distill');
+        const payload = JSON.parse(fs.readFileSync(distilledJson, 'utf8'));
+        const entries = Array.isArray(payload) ? payload : (payload.entries || []);
+        const { imported } = importDistilled(entries);
+        if (!quiet && imported > 0) {
+          log(`[wayfind] Imported ${imported} distilled entries from team repo`);
         }
       } catch (_) {}
     }

@@ -979,6 +979,13 @@ function getEntryContent(entryId, options = {}) {
     return null;
   }
 
+  // ── Distilled entries ───────────────────────────────────────────────────
+  if (entry.source === 'distilled') {
+    try {
+      return fs.readFileSync(path.join(storePath, 'distilled', `${entryId}.md`), 'utf8');
+    } catch { return null; }
+  }
+
   // ── Conversation entries ────────────────────────────────────────────────
   if (entry.source === 'conversation') {
     // Try journal path first (for --export'd conversations)

@@ -1,0 +1,72 @@
+# Wayfind distillation pipeline
+#
+# Copy this file to .github/workflows/wayfind-distill.yml in your team-context repo.
+#
+# What it does:
+#   - Runs on every push that touches journals/
+#   - Indexes all journals into a fresh content store
+#   - Runs the distillation pipeline (dedup + LLM merge for daily/weekly/archive tiers)
+#   - Exports distilled entries to .wayfind/distilled.json
+#   - Commits the result back to the repo
+#
+# Team members get the distilled entries automatically on their next `wayfind context pull`.
+#
+# Required secrets:
+#   ANTHROPIC_API_KEY  — for LLM merge calls during distillation
+#
+# Optional: set WAYFIND_DISTILL_TIER to 'daily', 'weekly', 'archive', or 'all' (default: all)
+
+name: Wayfind Distillation
+
+on:
+  push:
+    paths:
+      - 'journals/**'
+  workflow_dispatch:
+
+jobs:
+  distill:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Wayfind
+        run: npm install -g wayfind
+
+      - name: Index journals
+        env:
+          TEAM_CONTEXT_STORE_PATH: ${{ github.workspace }}/.wayfind/store
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: wayfind index-journals --dir ./journals --no-embeddings
+
+      - name: Distill
+        env:
+          TEAM_CONTEXT_STORE_PATH: ${{ github.workspace }}/.wayfind/store
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: wayfind distill --tier ${{ vars.WAYFIND_DISTILL_TIER || 'all' }}
+
+      - name: Export distilled entries
+        env:
+          TEAM_CONTEXT_STORE_PATH: ${{ github.workspace }}/.wayfind/store
+        run: wayfind distill export --output .wayfind/distilled.json
+
+      - name: Commit distilled.json if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add .wayfind/distilled.json
+          if git diff --cached --quiet; then
+            echo "No changes to distilled.json"
+          else
+            git commit -m "chore: update distilled context [skip ci]"
+            git push
+          fi

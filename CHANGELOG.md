@@ -2,6 +2,17 @@
 
 All notable changes to Wayfind are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.0.55] - 2026-04-02
+
+### Added
+- **GHA distillation pipeline** — teams can now run distillation entirely via GitHub Actions, with no container required. Add `templates/gha-distill.yml` to your team-context repo and set `ANTHROPIC_API_KEY` as a repo secret. The workflow indexes journals, runs distillation, and commits `.wayfind/distilled.json` back to the repo on every journal push.
+- `wayfind distill export [--output <path>]` — dumps all LLM-merged distilled entries to JSON (stdout or file). Used by the GHA pipeline; also useful for debugging what distillation produced.
+- `wayfind distill import <path>` — idempotently imports distilled entries from a JSON file into the local content store. Skips entries already present by content hash.
+- `wayfind context pull` now auto-imports `.wayfind/distilled.json` from the team repo after each pull — team members get distilled context without any extra steps.
+
+### Fixed
+- Distilled entry content (LLM-merged summaries) is now persisted to `{store}/distilled/{id}.md` — previously, merged content was generated but never written to disk, making it unretrievable by search and the bot.
+
 ## [2.0.54] - 2026-04-01
 
 ### Fixed

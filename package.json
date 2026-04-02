@@ -1,6 +1,6 @@
 {
   "name": "wayfind",
-  "version": "2.0.58",
+  "version": "2.0.59",
   "description": "Team decision trail for AI-assisted development. The connective tissue between product, engineering, and strategy.",
   "bin": {
     "wayfind": "./bin/team-context.js",

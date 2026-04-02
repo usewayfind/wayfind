@@ -2,6 +2,12 @@
 
 All notable changes to Wayfind are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.0.59] - 2026-04-02
+
+### Changed
+- GHA workflow: removed journal push trigger — raw journal content is already distributed via git + `wayfind context pull`; the GHA pipeline only needs to produce distilled/merged entries, which runs nightly (2am UTC) and on manual dispatch. This eliminates the livelock where long distillation runs were continuously cancelled by concurrent journal pushes.
+- GHA workflow: `cancel-in-progress: false` — distillation runs queue rather than cancel, since each run is expensive and produces authoritative output.
+
 ## [2.0.58] - 2026-04-02
 
 ### Fixed

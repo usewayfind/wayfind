@@ -2,12 +2,11 @@
 #
 # Copy this file to .github/workflows/wayfind-distill.yml in your team-context repo.
 #
-# What it does:
-#   - On journal pushes: indexes journals and runs daily-tier distillation (3–14 day old content)
-#   - On weekly schedule (Sunday midnight): also runs weekly + archive tiers
-#   - Exports distilled entries to .wayfind/distilled.json and commits back
+# Runs nightly (2am UTC) and on manual dispatch. Journal push triggers are intentionally
+# absent — raw journal content is already distributed via git pull + wayfind context pull.
+# This pipeline only produces distilled/merged entries (the LLM summarization layer).
 #
-# Team members get the distilled entries automatically on their next `wayfind context pull`.
+# Team members get distilled entries automatically on their next `wayfind context pull`.
 #
 # Required secrets:
 #   ANTHROPIC_API_KEY  — for LLM merge calls during distillation
@@ -15,22 +14,18 @@
 name: Wayfind Distillation
 
 on:
-  push:
-    paths:
-      - 'journals/**'
   schedule:
-    - cron: '0 0 * * 0'   # Weekly: Sunday midnight UTC (weekly + archive tiers)
+    - cron: '0 2 * * *'   # Nightly: 2am UTC
   workflow_dispatch:
     inputs:
       tier:
         description: 'Distillation tier (daily, weekly, archive, all)'
         default: 'all'
 
-# Serialize runs — cancel in-progress when a newer push comes in.
-# Safe because each run indexes all current journals; the latest run is always authoritative.
+# One run at a time — don't cancel in-progress (distillation is expensive).
 concurrency:
   group: wayfind-distill
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   distill:
@@ -59,21 +54,14 @@ jobs:
         env:
           TEAM_CONTEXT_STORE_PATH: ${{ github.workspace }}/.wayfind/store
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-        run: |
-          if [ "${{ github.event_name }}" = "schedule" ]; then
-            wayfind distill --tier all
-          elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            wayfind distill --tier ${{ github.event.inputs.tier || 'all' }}
-          else
-            wayfind distill --tier daily
-          fi
+        run: wayfind distill --tier ${{ github.event.inputs.tier || 'all' }}
 
       - name: Export distilled entries
         env:
           TEAM_CONTEXT_STORE_PATH: ${{ github.workspace }}/.wayfind/store
         run: wayfind distill export --output .wayfind/distilled.json
 
-      - name: Commit distilled.json if changed
+      - name: Commit if changed
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"

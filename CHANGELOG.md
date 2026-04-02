@@ -2,6 +2,11 @@
 
 All notable changes to Wayfind are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.0.56] - 2026-04-02
+
+### Fixed
+- `wayfind distill --tier all` (and `archive`) no longer crashes with "Invalid time value" — `Infinity` date arithmetic was producing an invalid Date object when computing the `since` bound for the archive tier
+
 ## [2.0.55] - 2026-04-02
 
 ### Added

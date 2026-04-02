@@ -212,10 +212,10 @@ async function distillEntries(options = {}) {
 
     // Calculate date range for this tier
     const now = new Date();
-    const sinceDate = new Date(now);
-    sinceDate.setDate(sinceDate.getDate() - tierDef.maxAgeDays);
-    const untilDate = new Date(now);
-    untilDate.setDate(untilDate.getDate() - tierDef.minAgeDays);
+    const sinceDate = tierDef.maxAgeDays === Infinity
+      ? new Date(0)
+      : new Date(now.getTime() - tierDef.maxAgeDays * 86400000);
+    const untilDate = new Date(now.getTime() - tierDef.minAgeDays * 86400000);
 
     const since = sinceDate.toISOString().split('T')[0];
     const until = untilDate.toISOString().split('T')[0];

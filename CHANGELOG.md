@@ -2,6 +2,12 @@
 
 All notable changes to Wayfind are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.0.58] - 2026-04-02
+
+### Fixed
+- `wayfind distill` now falls back to `ANTHROPIC_API_KEY` env var for LLM config when no connectors config exists (e.g. in GitHub Actions) — previously distillation ran but silently skipped all merging, producing zero distilled entries
+- GHA workflow: daily tier only on journal pushes; weekly+archive on weekly schedule — prevents processing tens of thousands of entries on every push
+
 ## [2.0.57] - 2026-04-02
 
 ### Fixed

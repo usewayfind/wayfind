@@ -1411,7 +1411,7 @@ async function runDistill(args) {
 
   console.log(`Distilling content (tier: ${tier}${dryRun ? ', dry run' : ''})...`);
 
-  // Build LLM config from connectors
+  // Build LLM config from connectors, falling back to env vars (for GHA / CI)
   let llmConfig = null;
   if (!dryRun) {
     const config = readConnectorsConfig();
@@ -1421,6 +1421,8 @@ async function runDistill(args) {
         model: config.digest.llm.intelligence?.model || 'claude-haiku-4-5-20251001',
         api_key_env: config.digest.llm.api_key_env,
       };
+    } else if (process.env.ANTHROPIC_API_KEY) {
+      llmConfig = { provider: 'anthropic', model: 'claude-haiku-4-5-20251001', api_key_env: 'ANTHROPIC_API_KEY' };
     }
   }
 

@@ -24,6 +24,12 @@ on:
       - 'journals/**'
   workflow_dispatch:
 
+# Serialize runs — cancel in-progress when a newer push comes in.
+# Safe because each run indexes all current journals; the latest run is always authoritative.
+concurrency:
+  group: wayfind-distill
+  cancel-in-progress: true
+
 jobs:
   distill:
     runs-on: ubuntu-latest

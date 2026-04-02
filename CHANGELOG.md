@@ -2,6 +2,12 @@
 
 All notable changes to Wayfind are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.0.57] - 2026-04-02
+
+### Fixed
+- `wayfind distill` now correctly resolves the store path via `resolveStorePath()` — previously it fell back to `DEFAULT_STORE_PATH`, which caused it to read from an empty store when `TEAM_CONTEXT_STORE_PATH` was set (as in the GHA pipeline), producing zero eligible entries despite 30k+ indexed journals
+- GHA workflow template: added `concurrency` group with `cancel-in-progress: true` to prevent race conditions when multiple team members push journals simultaneously — concurrent runs are cancelled in favor of the latest, which always has the full journal set
+
 ## [2.0.56] - 2026-04-02
 
 ### Fixed

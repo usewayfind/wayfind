@@ -154,7 +154,7 @@ Format: A compact markdown summary, max 500 words.`,
  * @returns {Promise<{content: string, title: string}>}
  */
 async function mergeEntries(entries, llmConfig, tier) {
-  const storePath = contentStore.DEFAULT_STORE_PATH;
+  const storePath = contentStore.resolveStorePath();
   const journalDir = contentStore.DEFAULT_JOURNAL_DIR;
   const signalsDir = contentStore.DEFAULT_SIGNALS_DIR;
 
@@ -195,7 +195,7 @@ async function mergeEntries(entries, llmConfig, tier) {
 async function distillEntries(options = {}) {
   const tierName = options.tier || 'daily';
   const dryRun = options.dryRun || false;
-  const storePath = options.storePath || contentStore.DEFAULT_STORE_PATH;
+  const storePath = options.storePath || contentStore.resolveStorePath();
 
   const tiersToRun = tierName === 'all'
     ? ['daily', 'weekly', 'archive']

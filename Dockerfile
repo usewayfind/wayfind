@@ -1,8 +1,12 @@
-FROM node:20-alpine AS base
+FROM node:20-slim AS base
 
-# git is needed for pulling team-context repo updates (journal sync)
-RUN apk add --no-cache git
-RUN apk add --no-cache python3 make g++
+# git: journal sync git pulls. python3/make/g++: native module compilation (better-sqlite3).
+# wget: container healthcheck.
+# node:20-slim is Debian (glibc) — required for onnxruntime-node prebuilt binaries used by
+# @xenova/transformers. Alpine (musl) breaks onnxruntime-node with ERR_DLOPEN_FAILED.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git python3 make g++ wget \
+    && rm -rf /var/lib/apt/lists/*
 
 # Run as node user (uid 1000, gid 1000) — matches default Linux user on most hosts,
 # which allows git pull on bind-mounted team-context repos without permission issues.

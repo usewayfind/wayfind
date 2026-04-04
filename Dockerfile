@@ -20,12 +20,22 @@ COPY bin/ bin/
 COPY templates/ templates/
 COPY specializations/ specializations/
 
+# Pre-download the Xenova embedding model at build time so it's baked into the
+# image. Avoids an 80MB network download on every cold start at runtime.
+# WAYFIND_MODEL_CACHE is also read by generateEmbeddingLocal() in llm.js.
+ENV WAYFIND_MODEL_CACHE=/app/.xenova-cache
+RUN mkdir -p /app/.xenova-cache && chown -R node:node /app/.xenova-cache
+USER node
+RUN node -e "\
+  const {pipeline, env} = require('@xenova/transformers'); \
+  env.cacheDir = '/app/.xenova-cache'; \
+  pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2') \
+    .then(() => { process.stderr.write('Xenova model ready\\n'); process.exit(0); }) \
+    .catch(e => { process.stderr.write('Model download failed: ' + e.message + '\\n'); process.exit(1); });"
+
 # Health check — start command exposes /healthz
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD wget -qO- http://localhost:3141/healthz || exit 1
-
-# Drop to non-root (node user = uid 1000, matches most host users)
-USER node
 
 # Default mode: all-in-one (override via TEAM_CONTEXT_MODE)
 ENV TEAM_CONTEXT_MODE=all-in-one

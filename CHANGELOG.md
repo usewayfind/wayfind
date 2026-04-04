@@ -2,6 +2,19 @@
 
 All notable changes to Wayfind are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.0.60] - 2026-04-04
+
+### Changed
+- **Semantic search works out of the box** — `@xenova/transformers` is now a first-class dependency (was optional). Every `npm install -g wayfind` gets local embedding support. No API key required.
+- **Docker image pre-bakes the Xenova model** at build time (`Xenova/all-MiniLM-L6-v2`, ~80MB). Container cold starts no longer trigger a network download. Set `WAYFIND_MODEL_CACHE=/app/.xenova-cache` in your container env to use the baked cache.
+
+### Fixed
+- Local embedding model (Xenova) was silently broken in Docker and any non-TTY context. The `allowLocalModels = false` flag was set whenever stdout wasn't a TTY, which forced a re-download on every process start rather than using the disk cache. Replaced with explicit `cacheDir` configuration via `WAYFIND_MODEL_CACHE` env var.
+
+### Upgrade path
+- Azure OpenAI and OpenAI embedding keys still take priority when configured — they're faster and produce higher-dimensional vectors. Xenova is now the zero-config baseline for teams that don't want embedding API costs.
+- If you were relying on `@xenova/transformers` as an optional install, nothing changes. If you weren't installing it before, semantic search now works automatically after upgrading.
+
 ## [2.0.59] - 2026-04-02
 
 ### Changed

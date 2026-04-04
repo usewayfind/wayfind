@@ -371,11 +371,11 @@ let _localPipeline = null;
 async function generateEmbeddingLocal(text) {
   try {
     if (!_localPipeline) {
-      // Dynamic require — optional dep, may not be installed
       const { pipeline, env } = require('@xenova/transformers');
-      // Suppress progress output in non-interactive contexts
-      if (!process.stdout.isTTY) {
-        env.allowLocalModels = false;
+      // Use configured cache dir (Docker bakes the model here at build time).
+      // If unset, Xenova defaults to ~/.cache/huggingface/hub/.
+      if (process.env.WAYFIND_MODEL_CACHE) {
+        env.cacheDir = process.env.WAYFIND_MODEL_CACHE;
       }
       process.stderr.write('[wayfind] Loading local embedding model (first use — may take a moment)...\n');
       _localPipeline = await pipeline('feature-extraction', LOCAL_EMBEDDING_MODEL);

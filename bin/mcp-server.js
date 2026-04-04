@@ -228,7 +228,7 @@ async function proxyGetEntry(id) {
 const TOOLS = [
   {
     name: 'search_context',
-    description: 'Search team context by natural language or keyword. Returns ranked journal entries, decisions, and signals. Use this to answer questions about past work, architectural decisions, and team activity.',
+    description: 'Search the team\'s full decision history across all repos and all engineers. Returns ranked journal entries, decisions, and signals. Use this — not file reads — to answer any question about past work, architectural decisions, what was decided, or team activity. The content store covers history that state files cannot.',
     inputSchema: {
       type: 'object',
       properties: {

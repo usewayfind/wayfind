@@ -27,6 +27,18 @@
 3. Check the Memory Files table in global-state.md — load any `~/.claude/memory/` files whose keywords match this session's topic
 4. Summarize current state, then ask: **"What's the goal for this session? What does success look like?"**
 
+### Using the Wayfind MCP Server
+
+The `search_context` MCP tool is the right way to answer questions about past decisions, architectural choices, and team activity. **Do not read state files or repo files to answer these questions** — the content store covers the entire team's decision history across all repos and all engineers, which state files cannot.
+
+Use `search_context` when asked about:
+- What was decided about X
+- What work has been done on X
+- What the team's approach to X is
+- Recent activity in a repo or area
+
+State files (`team-state.md`, `personal-state.md`) are for **current status** — who's working on what right now. The content store is for **decision history** — what was decided and why.
+
 ### Mid-Session
 
 If work drifts from the stated goal, flag it: *"Quick check — we set out to [goal]. This feels like [tangent]. Stay the course or pivot?"*

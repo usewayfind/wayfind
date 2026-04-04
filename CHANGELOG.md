@@ -2,6 +2,12 @@
 
 All notable changes to Wayfind are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.0.65] - 2026-04-04
+
+### Changed
+- `search_context` tool description is now explicit that it covers the full team decision history across all repos — not just local files. Makes Claude prefer it over file reads for questions about past work.
+- Session protocol (CLAUDE.md) now explicitly tells Claude to use `search_context` for decision history queries instead of reading state files. State files are for current status; the content store is for decision history.
+
 ## [2.0.64] - 2026-04-04
 
 ### Fixed

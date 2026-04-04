@@ -156,8 +156,11 @@ function isRepoExcluded(repo) {
   if (!repo) return (INCLUDE_REPOS.length > 0); // exclude null repo only when allowlist active
   const lower = repo.toLowerCase();
 
-  // Allowlist takes priority — if set, only matching repos pass
+  // Allowlist takes priority — if set, only matching repos pass.
+  // Unqualified repo names (no '/') are always allowed — they're team member journals
+  // written without an org prefix and are almost certainly internal team work.
   if (INCLUDE_REPOS.length > 0) {
+    if (!lower.includes('/')) return false; // unqualified names pass through
     return !INCLUDE_REPOS.some(pattern => {
       if (pattern.endsWith('/*')) {
         // org/* wildcard — match org prefix

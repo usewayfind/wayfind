@@ -2,6 +2,11 @@
 
 All notable changes to Wayfind are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.0.67] - 2026-04-04
+
+### Fixed
+- `TEAM_CONTEXT_INCLUDE_REPOS` allowlist no longer filters out journal entries with unqualified repo names (e.g., `NotificationService` instead of `acme-org/NotificationService`). Team member journals written without an org prefix now pass through — only `org/repo` qualified names are checked against the allowlist.
+
 ## [2.0.66] - 2026-04-04
 
 ### Fixed

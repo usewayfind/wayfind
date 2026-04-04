@@ -554,6 +554,47 @@ function stripTemporalWords(query) {
     .join(' ');
 }
 
+/**
+ * Detect a person's name in a query and resolve it to an author slug.
+ * Looks in members/ profiles for a name match. Falls back to naive first-name match.
+ * Returns lowercase slug or null.
+ */
+function resolveAuthorFromQuery(query, config) {
+  const membersDir = resolveMembersDir(config);
+  const knownAuthors = [];
+
+  if (membersDir) {
+    try {
+      const files = fs.readdirSync(membersDir).filter(f => f.endsWith('.json'));
+      for (const file of files) {
+        try {
+          const m = JSON.parse(fs.readFileSync(path.join(membersDir, file), 'utf8'));
+          const slug = file.replace('.json', '').toLowerCase();
+          const name = (m.name || '').toLowerCase();
+          const firstName = name.split(/\s+/)[0];
+          knownAuthors.push({ slug, name, firstName });
+        } catch {}
+      }
+    } catch {}
+  }
+
+  const q = query.toLowerCase();
+  // Check for person-directed query patterns
+  const personMatch = q.match(/\b(?:did|has|have|from|by|about|for)\s+([a-z]+)\b/i);
+  if (!personMatch) return null;
+  const candidate = personMatch[1].toLowerCase();
+
+  // Match against known members
+  for (const a of knownAuthors) {
+    if (a.slug === candidate || a.firstName === candidate || a.name === candidate) {
+      return a.slug;
+    }
+  }
+
+  // If no members dir, just use the extracted name as a slug
+  return candidate.length > 2 ? candidate : null;
+}
+
 async function searchDecisionTrail(query, config) {
   const searchOpts = {
     limit: MAX_SEARCH_RESULTS,
@@ -567,6 +608,10 @@ async function searchDecisionTrail(query, config) {
   if (config._repoFilter && config._repoFilter.length > 0) {
     searchOpts.repos = config._repoFilter;
   }
+
+  // If query is about a specific person, filter to their entries
+  const authorFilter = resolveAuthorFromQuery(query, config);
+  if (authorFilter) searchOpts.user = authorFilter;
 
   // Resolve temporal references to date filters
   const dateFilters = resolveDateFilters(query);

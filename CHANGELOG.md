@@ -2,6 +2,11 @@
 
 All notable changes to Wayfind are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.0.68] - 2026-04-04
+
+### Fixed
+- Slack bot now filters search results by author when a query asks about a specific person (e.g. "what did Nick do this week"). Previously, semantic search returned the most relevant entries regardless of author, so person-directed queries returned the dominant author's work instead of the requested person's. Bot detects the target person from the query, resolves them against the members directory, and scopes the search to their entries.
+
 ## [2.0.67] - 2026-04-04
 
 ### Fixed

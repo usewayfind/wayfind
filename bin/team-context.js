@@ -4926,12 +4926,12 @@ async function indexJournalsIfAvailable() {
     console.log('No journal files found — skipping index.');
     return;
   }
-  const hasEmbeddingKey = !!(process.env.OPENAI_API_KEY || process.env.AZURE_OPENAI_EMBEDDING_ENDPOINT);
-  console.log(`Indexing ${entries.length} journal files from ${journalDir}${hasEmbeddingKey ? ' (with embeddings)' : ''}...`);
+  const hasEmbeddings = !!(process.env.OPENAI_API_KEY || process.env.AZURE_OPENAI_EMBEDDING_ENDPOINT) || llm.getEmbeddingProviderInfo().available;
+  console.log(`Indexing ${entries.length} journal files from ${journalDir}${hasEmbeddings ? ' (with embeddings)' : ''}...`);
   try {
     const stats = await contentStore.indexJournals({
       journalDir,
-      embeddings: hasEmbeddingKey,
+      embeddings: hasEmbeddings,
     });
     console.log(`Indexed ${stats.entryCount} entries (${stats.newEntries} new, ${stats.updatedEntries} updated).`);
   } catch (err) {
@@ -4953,7 +4953,7 @@ async function indexConversationsIfAvailable() {
   try {
     const stats = await contentStore.indexConversations({
       projectsDir,
-      embeddings: !!(process.env.OPENAI_API_KEY || process.env.AZURE_OPENAI_EMBEDDING_ENDPOINT),
+      embeddings: !!(process.env.OPENAI_API_KEY || process.env.AZURE_OPENAI_EMBEDDING_ENDPOINT) || llm.getEmbeddingProviderInfo().available,
     });
     console.log(`Conversations: ${stats.transcriptsProcessed} processed, ${stats.decisionsExtracted} decisions extracted (${stats.skipped} skipped).`);
   } catch (err) {
@@ -4967,12 +4967,12 @@ async function indexSignalsIfAvailable() {
     console.log(`No signals at ${signalsDir} — skipping index.`);
     return;
   }
-  const hasEmbeddingKey = !!(process.env.OPENAI_API_KEY || process.env.AZURE_OPENAI_EMBEDDING_ENDPOINT);
-  console.log(`Indexing signals from ${signalsDir}${hasEmbeddingKey ? ' (with embeddings)' : ''}...`);
+  const hasEmbeddings = !!(process.env.OPENAI_API_KEY || process.env.AZURE_OPENAI_EMBEDDING_ENDPOINT) || llm.getEmbeddingProviderInfo().available;
+  console.log(`Indexing signals from ${signalsDir}${hasEmbeddings ? ' (with embeddings)' : ''}...`);
   try {
     const stats = await contentStore.indexSignals({
       signalsDir,
-      embeddings: hasEmbeddingKey,
+      embeddings: hasEmbeddings,
     });
     console.log(`Signals: ${stats.fileCount} files (${stats.newEntries} new, ${stats.updatedEntries} updated, ${stats.skippedEntries} skipped).`);
   } catch (err) {

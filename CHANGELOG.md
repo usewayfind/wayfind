@@ -2,6 +2,11 @@
 
 All notable changes to Wayfind are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.0.61] - 2026-04-04
+
+### Fixed
+- Container indexing (journals, conversations, signals) now generates Xenova embeddings when no cloud embedding key is configured. Previously `indexJournalsIfAvailable`, `indexConversationsIfAvailable`, and `indexSignalsIfAvailable` only enabled embeddings when `OPENAI_API_KEY` or `AZURE_OPENAI_EMBEDDING_ENDPOINT` was set — they didn't check `getEmbeddingProviderInfo().available`, so Xenova was silently bypassed on every container reindex cycle.
+
 ## [2.0.60] - 2026-04-04
 
 ### Changed

@@ -3669,15 +3669,23 @@ async function contextPull(args) {
     log('[wayfind] Pulled latest team-context');
     // Mark success — doctor checks this to warn on prolonged failures
     try { fs.writeFileSync(markerFile, new Date().toISOString()); } catch {}
-    // Index any new team journals into the local content store
-    const journalsDir = path.join(teamPath, 'journals');
-    if (fs.existsSync(journalsDir)) {
-      try {
-        const stats = await contentStore.indexJournals({ journalDir: journalsDir });
-        if (!quiet && stats.newEntries > 0) {
-          log(`[wayfind] Indexed ${stats.newEntries} new team journal entries`);
-        }
-      } catch (_) {}
+    // Index any new team journals into the local content store.
+    // Also checks memory/journal/ — some setups (backup hook → team-context repo) land journals there.
+    const journalDirsToIndex = [
+      path.join(teamPath, 'journals'),
+      path.join(teamPath, 'memory', 'journal'),
+    ];
+    let totalNewEntries = 0;
+    for (const journalsDir of journalDirsToIndex) {
+      if (fs.existsSync(journalsDir)) {
+        try {
+          const stats = await contentStore.indexJournals({ journalDir: journalsDir });
+          totalNewEntries += stats.newEntries || 0;
+        } catch (_) {}
+      }
+    }
+    if (!quiet && totalNewEntries > 0) {
+      log(`[wayfind] Indexed ${totalNewEntries} new team journal entries`);
     }
     // Import distilled entries if the team repo has a distilled.json
     const distilledJson = path.join(teamPath, '.wayfind', 'distilled.json');

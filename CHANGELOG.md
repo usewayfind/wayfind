@@ -2,6 +2,11 @@
 
 All notable changes to Wayfind are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.0.66] - 2026-04-04
+
+### Fixed
+- `wayfind pull` now indexes journals from both `journals/` and `memory/journal/` in the team-context repo. Setups that use the backup hook with the team-context repo as the backup destination land journals in `memory/journal/` — they were previously invisible to the content store.
+
 ## [2.0.65] - 2026-04-04
 
 ### Changed

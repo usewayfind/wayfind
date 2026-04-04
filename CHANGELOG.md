@@ -2,6 +2,12 @@
 
 All notable changes to Wayfind are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.0.62] - 2026-04-04
+
+### Fixed
+- **SQLite backend now persists `embedding_model`** — `saveIndex()` writes the active embedding model name to the `metadata` table; `loadIndex()` reads it back. Previously the field was always dropped, leaving mismatch detection permanently blind and preventing automatic re-embedding when the provider changes.
+- **Embedding generation is now concurrent** — `indexJournals`, `indexConversations`, and `indexSignals` no longer call `generateEmbedding()` serially. A new `batchEmbed()` helper fans out embedding calls in chunks of 20 via `Promise.all`. For a store with 35k entries, initial index time drops from ~30 minutes to ~2 minutes on the Xenova local provider.
+
 ## [2.0.61] - 2026-04-04
 
 ### Fixed

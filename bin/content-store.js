@@ -421,6 +421,28 @@ function cosineSimilarity(a, b) {
  * @param {boolean} [options.embeddings] - Generate embeddings (default: true if OPENAI_API_KEY or TEAM_CONTEXT_SIMULATE)
  * @returns {Promise<Object>} - Stats: { entryCount, newEntries, updatedEntries, skippedEntries, removedEntries }
  */
+
+/**
+ * Embed a batch of items concurrently.
+ * @param {Array<{id: string, content: string}>} items
+ * @param {number} [concurrency=20]
+ * @returns {Promise<Map<string, Array|null>>} Map from id to vector (or null on failure)
+ */
+async function batchEmbed(items, concurrency = 20) {
+  const results = new Map();
+  for (let i = 0; i < items.length; i += concurrency) {
+    const chunk = items.slice(i, i + concurrency);
+    await Promise.all(chunk.map(async ({ id, content }) => {
+      try {
+        results.set(id, await llm.generateEmbedding(content));
+      } catch {
+        results.set(id, null);
+      }
+    }));
+  }
+  return results;
+}
+
 async function indexJournals(options = {}) {
   const journalDir = options.journalDir || DEFAULT_JOURNAL_DIR;
   const storePath = options.storePath || resolveStorePath();
@@ -497,10 +519,11 @@ async function indexJournals(options = {}) {
     }
   }
 
-  // Compute diffs
+  // Compute diffs — collect embedding work for batching
   const stats = { entryCount: 0, newEntries: 0, updatedEntries: 0, skippedEntries: 0, removedEntries: 0 };
   const finalEntries = {};
   const finalEmbeddings = { ...existingEmbeddings };
+  const pendingEmbeds = []; // { id, content, reason: 'update'|'changed'|'new' }
 
   for (const [id, entry] of Object.entries(newEntries)) {
     const existing = existingEntries[id];
@@ -511,46 +534,38 @@ async function indexJournals(options = {}) {
       // Unchanged — but generate embedding if missing and embeddings are enabled
       entry.hasEmbedding = existing.hasEmbedding;
       if (doEmbeddings && !existing.hasEmbedding && content) {
-        try {
-          const vec = await llm.generateEmbedding(content);
-          finalEmbeddings[id] = vec;
-          entry.hasEmbedding = true;
-          stats.updatedEntries++;
-        } catch (err) {
-          stats.skippedEntries++;
-        }
+        pendingEmbeds.push({ id, content, reason: 'update' });
       } else {
         stats.skippedEntries++;
       }
       finalEntries[id] = entry;
     } else if (existing) {
       // Changed — re-embed
-      if (doEmbeddings) {
-        try {
-          const vec = await llm.generateEmbedding(content);
-          finalEmbeddings[id] = vec;
-          entry.hasEmbedding = true;
-        } catch (err) {
-          // Keep going without embedding for this entry
-          entry.hasEmbedding = false;
-          delete finalEmbeddings[id];
-        }
-      }
       finalEntries[id] = entry;
       stats.updatedEntries++;
+      if (doEmbeddings) pendingEmbeds.push({ id, content, reason: 'changed' });
     } else {
       // New entry
-      if (doEmbeddings) {
-        try {
-          const vec = await llm.generateEmbedding(content);
-          finalEmbeddings[id] = vec;
-          entry.hasEmbedding = true;
-        } catch (err) {
-          entry.hasEmbedding = false;
-        }
-      }
       finalEntries[id] = entry;
       stats.newEntries++;
+      if (doEmbeddings) pendingEmbeds.push({ id, content, reason: 'new' });
+    }
+  }
+
+  // Batch embed all pending entries concurrently
+  if (pendingEmbeds.length > 0) {
+    const embedResults = await batchEmbed(pendingEmbeds);
+    for (const { id, reason } of pendingEmbeds) {
+      const vec = embedResults.get(id);
+      if (vec) {
+        finalEmbeddings[id] = vec;
+        finalEntries[id].hasEmbedding = true;
+        if (reason === 'update') stats.updatedEntries++;
+      } else {
+        if (reason === 'update') stats.skippedEntries++;
+        else if (reason === 'changed') { finalEntries[id].hasEmbedding = false; delete finalEmbeddings[id]; }
+        // 'new': hasEmbedding stays false
+      }
     }
   }
 
@@ -1582,18 +1597,6 @@ async function indexConversations(options = {}) {
       };
       convEntry.qualityScore = computeQualityScore(convEntry);
       existingIndex.entries[id] = convEntry;
-
-      if (doEmbeddings) {
-        try {
-          const vec = await llm.generateEmbedding(content);
-          existingEmbeddings[id] = vec;
-          existingIndex.entries[id].hasEmbedding = true;
-        } catch {
-          // Continue without embedding
-        }
-      }
-
-      delete existingIndex.entries[id]._content;
       entryIds.push(id);
       stats.decisionsExtracted++;
     }
@@ -1606,6 +1609,29 @@ async function indexConversations(options = {}) {
     // Update conversation index
     convIndex[filePath] = { fingerprint: fp, entryIds, extractedAt: Date.now() };
     stats.transcriptsProcessed++;
+  }
+
+  // Batch embed all new conversation entries
+  if (doEmbeddings) {
+    const pendingEmbeds = Object.entries(existingIndex.entries)
+      .filter(([, e]) => e._content && !e.hasEmbedding)
+      .map(([id, e]) => ({ id, content: e._content }));
+
+    if (pendingEmbeds.length > 0) {
+      const embedResults = await batchEmbed(pendingEmbeds);
+      for (const { id } of pendingEmbeds) {
+        const vec = embedResults.get(id);
+        if (vec) {
+          existingEmbeddings[id] = vec;
+          existingIndex.entries[id].hasEmbedding = true;
+        }
+      }
+    }
+  }
+
+  // Strip temp _content fields
+  for (const entry of Object.values(existingIndex.entries)) {
+    delete entry._content;
   }
 
   // Save everything
@@ -1876,6 +1902,7 @@ async function indexSignals(options = {}) {
   const existingEmbeddings = doEmbeddings ? (_sigModelChanged ? {} : backend.loadEmbeddings()) : {};
 
   const stats = { fileCount: 0, newEntries: 0, updatedEntries: 0, skippedEntries: 0 };
+  const signalPendingEmbeds = []; // { id, content, reason: 'update'|'changed'|'new'|'chunk-update'|'chunk-new' }
 
   // Scan channel directories
   let channels;
@@ -1960,14 +1987,7 @@ async function indexSignals(options = {}) {
       if (existing && existing.contentHash === hash) {
         // Unchanged — but generate embedding if missing
         if (doEmbeddings && !existing.hasEmbedding && content) {
-          try {
-            const vec = await llm.generateEmbedding(content);
-            existingEmbeddings[id] = vec;
-            existing.hasEmbedding = true;
-            stats.updatedEntries++;
-          } catch {
-            stats.skippedEntries++;
-          }
+          signalPendingEmbeds.push({ id, content, reason: 'update' });
         } else {
           stats.skippedEntries++;
         }
@@ -1985,16 +2005,7 @@ async function indexSignals(options = {}) {
           tags,
           hasEmbedding: false,
         };
-
-        if (doEmbeddings) {
-          try {
-            const vec = await llm.generateEmbedding(content);
-            existingEmbeddings[id] = vec;
-            existingIndex.entries[id].hasEmbedding = true;
-          } catch {
-            delete existingEmbeddings[id];
-          }
-        }
+        if (doEmbeddings) signalPendingEmbeds.push({ id, content, reason: 'changed' });
         stats.updatedEntries++;
       } else {
         // New entry
@@ -2010,16 +2021,7 @@ async function indexSignals(options = {}) {
           tags,
           hasEmbedding: false,
         };
-
-        if (doEmbeddings) {
-          try {
-            const vec = await llm.generateEmbedding(content);
-            existingEmbeddings[id] = vec;
-            existingIndex.entries[id].hasEmbedding = true;
-          } catch {
-            // Continue without embedding
-          }
-        }
+        if (doEmbeddings) signalPendingEmbeds.push({ id, content, reason: 'new' });
         stats.newEntries++;
       }
     }
@@ -2095,13 +2097,7 @@ async function indexSignals(options = {}) {
 
       if (existingChunk && existingChunk.contentHash === chunkHash) {
         if (doEmbeddings && !existingChunk.hasEmbedding) {
-          try {
-            const vec = await llm.generateEmbedding(section);
-            existingEmbeddings[chunkId] = vec;
-            existingChunk.hasEmbedding = true;
-          } catch {
-            // Skip
-          }
+          signalPendingEmbeds.push({ id: chunkId, content: section, reason: 'chunk-update' });
         }
         continue;
       }
@@ -2122,13 +2118,24 @@ async function indexSignals(options = {}) {
       };
 
       if (doEmbeddings) {
-        try {
-          const vec = await llm.generateEmbedding(section);
-          existingEmbeddings[chunkId] = vec;
-          existingIndex.entries[chunkId].hasEmbedding = true;
-        } catch {
-          // Continue without embedding
-        }
+        signalPendingEmbeds.push({ id: chunkId, content: section, reason: 'chunk-new' });
+      }
+    }
+  }
+
+  // Batch embed all pending signal entries
+  if (signalPendingEmbeds.length > 0) {
+    const embedResults = await batchEmbed(signalPendingEmbeds);
+    for (const { id, reason } of signalPendingEmbeds) {
+      const vec = embedResults.get(id);
+      if (vec) {
+        existingEmbeddings[id] = vec;
+        existingIndex.entries[id].hasEmbedding = true;
+        if (reason === 'update') stats.updatedEntries++;
+      } else {
+        if (reason === 'update') stats.skippedEntries++;
+        else if (reason === 'changed') { existingIndex.entries[id].hasEmbedding = false; delete existingEmbeddings[id]; }
+        // 'new', 'chunk-update', 'chunk-new': hasEmbedding stays false
       }
     }
   }

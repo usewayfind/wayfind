@@ -203,11 +203,13 @@ class SqliteBackend {
     for (const row of rows) {
       entries[row.id] = rowToEntry(row);
     }
+    const embeddingModelRow = this.db.prepare("SELECT value FROM metadata WHERE key = 'embedding_model'").get();
     return {
       version: INDEX_VERSION,
       lastUpdated: Date.now(),
       entryCount: rows.length,
       entries,
+      ...(embeddingModelRow ? { embedding_model: embeddingModelRow.value } : {}),
     };
   }
 
@@ -227,6 +229,9 @@ class SqliteBackend {
       `);
       for (const [id, entry] of Object.entries(entries)) {
         stmt.run(entryToRow(id, entry));
+      }
+      if (index.embedding_model) {
+        this.db.prepare('INSERT OR REPLACE INTO metadata (key, value) VALUES (?, ?)').run('embedding_model', index.embedding_model);
       }
     });
     txn();

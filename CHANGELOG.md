@@ -2,6 +2,15 @@
 
 All notable changes to Wayfind are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.0.63] - 2026-04-04
+
+### Added
+- **MCP server auto-registers on install** — `wayfind init` (Claude Code) now writes `wayfind-mcp` into `~/.claude/settings.json` under `mcpServers`. `wayfind init-cursor` writes to `~/.cursor/mcp.json`. Idempotent — skips if already present. Any MCP-compatible AI tool gets access to the full team context store without manual config.
+
+### Fixed
+- CONTRIBUTING.md referred to "Meridian" throughout (wrong product name, wrong GitHub URLs). Fixed to Wayfind.
+- README env vars table described `OPENAI_API_KEY` as required for semantic search. Xenova local embeddings are now the default — OpenAI is an optional upgrade.
+
 ## [2.0.62] - 2026-04-04
 
 ### Fixed

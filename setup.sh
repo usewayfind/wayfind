@@ -441,6 +441,41 @@ PYEOF
             fi
         fi
 
+        # MCP server — register wayfind-mcp in settings.json
+        MCP_REGISTERED=false
+        grep -q '"wayfind"' "$SETTINGS" 2>/dev/null && MCP_REGISTERED=true
+        if [ "$MCP_REGISTERED" = false ]; then
+            if [ "$DRY_RUN" = false ]; then
+                TMP_SETTINGS="$(mktemp)"
+                if python3 - "$SETTINGS" "$TMP_SETTINGS" <<'PYEOF' 2>/dev/null; then
+import json, sys
+settings_path, out_path = sys.argv[1], sys.argv[2]
+try:
+    with open(settings_path) as f:
+        settings = json.load(f)
+except (json.JSONDecodeError, IOError):
+    sys.exit(1)
+mcp = settings.setdefault("mcpServers", {})
+if "wayfind" not in mcp:
+    mcp["wayfind"] = {"command": "wayfind-mcp"}
+with open(out_path, "w") as f:
+    json.dump(settings, f, indent=2)
+    f.write("\n")
+PYEOF
+                    mv "$TMP_SETTINGS" "$SETTINGS"
+                    log "Registered wayfind MCP server in ~/.claude/settings.json"
+                else
+                    rm -f "$TMP_SETTINGS"
+                    warn "Could not register MCP server — add manually to ~/.claude/settings.json:"
+                    warn '  "mcpServers": { "wayfind": { "command": "wayfind-mcp" } }'
+                fi
+            else
+                info "[dry-run] Would register wayfind MCP server in $SETTINGS"
+            fi
+        else
+            info "MCP server already registered in settings.json — skipped"
+        fi
+
         ;;
 
     cursor)
@@ -469,6 +504,48 @@ PYEOF
             else
                 warn "--repo path not found or not a directory: $REPO_DIR"
             fi
+        fi
+
+        # MCP server — register wayfind-mcp in ~/.cursor/mcp.json
+        CURSOR_MCP="$HOME/.cursor/mcp.json"
+        run mkdir -p "$HOME/.cursor"
+        CURSOR_MCP_REGISTERED=false
+        grep -q '"wayfind"' "$CURSOR_MCP" 2>/dev/null && CURSOR_MCP_REGISTERED=true
+        if [ "$CURSOR_MCP_REGISTERED" = false ]; then
+            if [ "$DRY_RUN" = false ]; then
+                if [ ! -f "$CURSOR_MCP" ]; then
+                    printf '{\n  "mcpServers": {\n    "wayfind": {\n      "command": "wayfind-mcp",\n      "args": []\n    }\n  }\n}\n' > "$CURSOR_MCP"
+                    log "Created ~/.cursor/mcp.json with wayfind MCP server"
+                else
+                    TMP_MCP="$(mktemp)"
+                    if python3 - "$CURSOR_MCP" "$TMP_MCP" <<'PYEOF' 2>/dev/null; then
+import json, sys
+mcp_path, out_path = sys.argv[1], sys.argv[2]
+try:
+    with open(mcp_path) as f:
+        config = json.load(f)
+except (json.JSONDecodeError, IOError):
+    config = {}
+mcp = config.setdefault("mcpServers", {})
+if "wayfind" not in mcp:
+    mcp["wayfind"] = {"command": "wayfind-mcp", "args": []}
+with open(out_path, "w") as f:
+    json.dump(config, f, indent=2)
+    f.write("\n")
+PYEOF
+                        mv "$TMP_MCP" "$CURSOR_MCP"
+                        log "Registered wayfind MCP server in ~/.cursor/mcp.json"
+                    else
+                        rm -f "$TMP_MCP"
+                        warn "Could not register MCP server — add manually to ~/.cursor/mcp.json:"
+                        warn '  "mcpServers": { "wayfind": { "command": "wayfind-mcp", "args": [] } }'
+                    fi
+                fi
+            else
+                info "[dry-run] Would register wayfind MCP server in ~/.cursor/mcp.json"
+            fi
+        else
+            info "MCP server already registered in ~/.cursor/mcp.json — skipped"
         fi
         ;;
 

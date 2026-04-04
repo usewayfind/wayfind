@@ -180,13 +180,11 @@ Auto-registered during `wayfind init`. When a team container is running, the loc
 
 | Variable | Description |
 |----------|-------------|
-| `OPENAI_API_KEY` | Semantic search embeddings (full-text works without it) |
+| `OPENAI_API_KEY` | Upgrade semantic search to OpenAI embeddings (Xenova local model is used by default — no key needed) |
 | `TEAM_CONTEXT_LLM_MODEL` | LLM for digests (default: `claude-sonnet-4-5-20250929`) |
 | `TEAM_CONTEXT_DIGEST_SCHEDULE` | Cron schedule (default: `0 8 * * 1` — Monday 8am) |
 | `TEAM_CONTEXT_EXCLUDE_REPOS` | Repos to exclude from digests |
 | `TEAM_CONTEXT_TELEMETRY` | `true` for anonymous usage telemetry |
-| `TEAM_CONTEXT_NO_SLACK` | Run container without Slack integration (set to `1`) |
-| `TEAM_CONTEXT_KEY_ROTATE_SCHEDULE` | API key rotation cron (default: `0 2 * * *`) |
 
 ---
 

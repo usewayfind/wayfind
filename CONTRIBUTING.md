@@ -1,12 +1,12 @@
-# Contributing to Meridian
+# Contributing to Wayfind
 
 Thanks for your interest in contributing. This guide covers the practical steps.
 
 ## Reporting Issues
 
-Open a [GitHub issue](https://github.com/usemeridian/meridian/issues) for:
+Open a [GitHub issue](https://github.com/usewayfind/wayfind/issues) for:
 
-- **Bug reports** — Include your Meridian version (`meridian --version`), OS, and the AI tool you're using (Claude Code, Cursor, etc.). Paste the relevant error output.
+- **Bug reports** — Include your Wayfind version (`wayfind --version`), OS, and the AI tool you're using (Claude Code, Cursor, etc.). Paste the relevant error output.
 - **Feature requests** — Describe the problem you're solving, not just the solution you want.
 
 ## Submitting Pull Requests
@@ -29,11 +29,11 @@ Keep PRs focused. One concern per PR.
 
 ### Specializations
 
-Meridian supports specializations for different AI tools. If you use a tool that isn't covered yet (Windsurf, Aider, Continue, etc.), adding a specialization is a great way to contribute. Look at the existing specializations in `specializations/` for the pattern.
+Wayfind supports specializations for different AI tools. If you use a tool that isn't covered yet (Windsurf, Aider, Continue, etc.), adding a specialization is a great way to contribute. Look at the existing specializations in `specializations/` for the pattern.
 
 ### Signal Connectors
 
-Signal connectors follow a standard interface and are designed to be contribution-friendly. If you want Meridian to pull context from a new source (CI system, project tracker, etc.), a connector is the right approach. See `bin/` for existing connector implementations.
+Signal connectors follow a standard interface and are designed to be contribution-friendly. If you want Wayfind to pull context from a new source (CI system, project tracker, etc.), a connector is the right approach. See `bin/` for existing connector implementations.
 
 ## Style
 

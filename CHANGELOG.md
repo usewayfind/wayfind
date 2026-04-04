@@ -2,6 +2,11 @@
 
 All notable changes to Wayfind are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.0.64] - 2026-04-04
+
+### Fixed
+- MCP registration now writes the absolute path to `wayfind-mcp` instead of the bare command name. Claude Code spawns MCP servers with a minimal environment where npm global bin directories are not in PATH, causing silent startup failures. The setup script resolves the binary path via `command -v` with an `npm config get prefix` fallback.
+
 ## [2.0.63] - 2026-04-04
 
 ### Added

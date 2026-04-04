@@ -816,7 +816,7 @@ function applyFilters(entry, filters) {
   if (filters.since && entry.date < filters.since) return false;
   if (filters.until && entry.date > filters.until) return false;
   if (filters.drifted !== undefined && entry.drifted !== filters.drifted) return false;
-  if (filters.user && entry.user && entry.user.toLowerCase() !== filters.user.toLowerCase()) return false;
+  if (filters.user && (!entry.user || entry.user.toLowerCase() !== filters.user.toLowerCase())) return false;
   return true;
 }
 

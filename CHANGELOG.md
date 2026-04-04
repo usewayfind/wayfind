@@ -2,6 +2,11 @@
 
 All notable changes to Wayfind are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.0.69] - 2026-04-04
+
+### Fixed
+- Author filter (`user` option in `applyFilters`) now strictly requires a matching `user` field. Previously, entries with no author set would pass through a user filter, causing the bot to include other team members' unattributed entries when querying a specific person.
+
 ## [2.0.68] - 2026-04-04
 
 ### Fixed

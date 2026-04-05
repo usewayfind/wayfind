@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tests for Slack bot direct commands (help, members, version, insights, etc.)
-# These commands run without LLM synthesis — pure data lookups.
+# Tests for Slack bot module loading and basic exports.
+# Direct command tests removed — the bot now uses LLM tool-use relay
+# for all queries (no hand-rolled command router).
 set -euo pipefail
 
 TEST_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -27,234 +28,110 @@ trap cleanup EXIT
 
 export TEAM_CONTEXT_SIMULATE=1
 
-# Create journal fixtures for insights
-JOURNAL_DIR="$TEST_HOME/.claude/memory/journal"
-STORE_DIR="$TEST_HOME/.claude/team-context/content-store"
-mkdir -p "$JOURNAL_DIR" "$STORE_DIR"
-
-cat > "$JOURNAL_DIR/2026-03-10.md" << 'EOF'
-## Wayfind — Bot commands implementation
-**Why:** Add CLI parity to the Slack bot
-**What:** Implemented direct commands: help, members, version, insights
-**Outcome:** Bot can now answer team queries without LLM
-**On track?:** Yes
-**Lessons:** Keep bot commands simple and fast
-EOF
-
-# Index journals so insights have data
-node -e "
-const cs = require('$REPO_ROOT/bin/content-store');
-cs.indexJournals({ journalDir: '$JOURNAL_DIR', storePath: '$STORE_DIR', noEmbeddings: true })
-  .then(r => console.log('Indexed:', r.entryCount, 'entries'));
-"
-
-# Create team-context with members
-TEAM_DIR="$TEST_HOME/team-context"
-MEMBERS_DIR="$TEAM_DIR/members"
-mkdir -p "$MEMBERS_DIR"
-
-cat > "$MEMBERS_DIR/greg.json" << 'EOF'
-{
-  "name": "Greg Leizerowicz",
-  "wayfind_version": "1.8.29",
-  "last_active": "2026-03-13T10:00:00Z",
-  "personas": ["engineering", "product"],
-  "slack_id": "U060N14JE4Q"
-}
-EOF
-
-cat > "$MEMBERS_DIR/nick.json" << 'EOF'
-{
-  "name": "Nick Weber",
-  "wayfind_version": "1.8.27",
-  "last_active": "2026-03-12T15:00:00Z",
-  "personas": ["engineering"]
-}
-EOF
-
-export TEAM_CONTEXT_TEAM_CONTEXT_DIR="$TEAM_DIR"
-
-# Create signal channel fixtures
-SIGNALS_DIR="$TEST_HOME/.claude/team-context/signals"
-mkdir -p "$SIGNALS_DIR/github" "$SIGNALS_DIR/intercom"
-echo "# GitHub signals" > "$SIGNALS_DIR/github/2026-03-10.md"
-echo "# Intercom signals" > "$SIGNALS_DIR/intercom/2026-03-10.md"
-export TEAM_CONTEXT_SIGNALS_DIR="$SIGNALS_DIR"
+mkdir -p "$TEST_HOME/.claude/team-context/content-store"
 
 echo ""
-echo "Bot Direct Commands"
+echo "Bot Module Exports"
 echo "==================="
 echo ""
 
-# ── Test handleDirectCommand via Node ─────────────────────────────────────
+# Test: module loads without error
+LOAD_TEST=$(node -e "
+  const bot = require('$REPO_ROOT/bin/slack-bot');
+  console.log('LOADED');
+  console.log('configure:' + typeof bot.configure);
+  console.log('start:' + typeof bot.start);
+  console.log('handleQuery:' + typeof bot.handleQuery);
+  console.log('extractQuery:' + typeof bot.extractQuery);
+  console.log('chunkMessage:' + typeof bot.chunkMessage);
+  console.log('fetchThreadHistory:' + typeof bot.fetchThreadHistory);
+  console.log('getConnectionStatus:' + typeof bot.getConnectionStatus);
+" 2>&1)
 
-run_command() {
-  local query="$1"
-  node -e "
-    const bot = require('$REPO_ROOT/bin/slack-bot');
-    const config = { store_path: '$STORE_DIR', team_context_dir: '$TEAM_DIR' };
-    const result = bot.handleDirectCommand('$query', config);
-    if (result === null) {
-      console.log('__NULL__');
-    } else {
-      console.log(result);
-    }
-  " 2>/dev/null
-}
-
-# help
-echo "Phase 1: Help command"
-
-RESULT=$(run_command "help")
-if echo "$RESULT" | grep -q "Wayfind Bot"; then
-  _pass "help returns bot help text"
+if echo "$LOAD_TEST" | grep -q "LOADED"; then
+  _pass "module loads without error"
 else
-  _fail "help returns bot help text" "Got: $RESULT"
+  _fail "module loads without error" "Got: $LOAD_TEST"
 fi
 
-RESULT=$(run_command "?")
-if echo "$RESULT" | grep -q "Commands"; then
-  _pass "? is an alias for help"
+if echo "$LOAD_TEST" | grep -q "configure:function"; then
+  _pass "exports configure()"
 else
-  _fail "? is an alias for help" "Got: $RESULT"
+  _fail "exports configure()" "Got: $LOAD_TEST"
 fi
 
-RESULT=$(run_command "commands")
-if echo "$RESULT" | grep -q "members"; then
-  _pass "commands lists available commands"
+if echo "$LOAD_TEST" | grep -q "start:function"; then
+  _pass "exports start()"
 else
-  _fail "commands lists available commands" "Got: $RESULT"
+  _fail "exports start()" "Got: $LOAD_TEST"
 fi
 
-# version
-echo ""
-echo "Phase 2: Version command"
-
-RESULT=$(run_command "version")
-if echo "$RESULT" | grep -q "Wayfind v"; then
-  _pass "version returns version string"
+if echo "$LOAD_TEST" | grep -q "handleQuery:function"; then
+  _pass "exports handleQuery()"
 else
-  _fail "version returns version string" "Got: $RESULT"
+  _fail "exports handleQuery()" "Got: $LOAD_TEST"
 fi
 
-# members
-echo ""
-echo "Phase 3: Members command"
-
-RESULT=$(run_command "members")
-if echo "$RESULT" | grep -q "Greg Leizerowicz"; then
-  _pass "members shows Greg"
+if echo "$LOAD_TEST" | grep -q "extractQuery:function"; then
+  _pass "exports extractQuery()"
 else
-  _fail "members shows Greg" "Got: $RESULT"
+  _fail "exports extractQuery()" "Got: $LOAD_TEST"
 fi
 
-if echo "$RESULT" | grep -q "Nick Weber"; then
-  _pass "members shows Nick"
+if echo "$LOAD_TEST" | grep -q "chunkMessage:function"; then
+  _pass "exports chunkMessage()"
 else
-  _fail "members shows Nick" "Got: $RESULT"
+  _fail "exports chunkMessage()" "Got: $LOAD_TEST"
 fi
 
-if echo "$RESULT" | grep -q "v1.8.29"; then
-  _pass "members shows Greg's version"
+if echo "$LOAD_TEST" | grep -q "fetchThreadHistory:function"; then
+  _pass "exports fetchThreadHistory()"
 else
-  _fail "members shows Greg's version" "Got: $RESULT"
+  _fail "exports fetchThreadHistory()" "Got: $LOAD_TEST"
 fi
 
-if echo "$RESULT" | grep -q "v1.8.27"; then
-  _pass "members shows Nick's version"
+# Test: extractQuery strips bot mention
+EXTRACT_TEST=$(node -e "
+  const bot = require('$REPO_ROOT/bin/slack-bot');
+  const r1 = bot.extractQuery('<@U123> what happened today', 'U123');
+  console.log('R1:' + r1);
+  const r2 = bot.extractQuery('@wayfind show me insights', null);
+  console.log('R2:' + r2);
+  const r3 = bot.extractQuery('<@U999> <@U123> hello', 'U123');
+  console.log('R3:' + r3);
+" 2>&1)
+
+if echo "$EXTRACT_TEST" | grep -q "R1:what happened today"; then
+  _pass "extractQuery strips bot mention"
 else
-  _fail "members shows Nick's version" "Got: $RESULT"
+  _fail "extractQuery strips bot mention" "Got: $EXTRACT_TEST"
 fi
 
-RESULT=$(run_command "team members")
-if echo "$RESULT" | grep -q "Team Members"; then
-  _pass "team members alias works"
+if echo "$EXTRACT_TEST" | grep -q "R2:show me insights"; then
+  _pass "extractQuery strips @wayfind prefix"
 else
-  _fail "team members alias works" "Got: $RESULT"
+  _fail "extractQuery strips @wayfind prefix" "Got: $EXTRACT_TEST"
 fi
 
-# Natural language version queries should route to members
-RESULT=$(run_command "what version is Nick on")
-if echo "$RESULT" | grep -q "Nick Weber"; then
-  _pass "what version is Nick on routes to members"
+# Test: chunkMessage splits long text
+CHUNK_TEST=$(node -e "
+  const bot = require('$REPO_ROOT/bin/slack-bot');
+  const short = bot.chunkMessage('hello', 100);
+  console.log('SHORT:' + short.length);
+  const long = bot.chunkMessage('a'.repeat(500), 100);
+  console.log('LONG:' + long.length);
+" 2>&1)
+
+if echo "$CHUNK_TEST" | grep -q "SHORT:1"; then
+  _pass "chunkMessage returns 1 chunk for short text"
 else
-  _fail "what version is Nick on routes to members" "Got: $RESULT"
+  _fail "chunkMessage returns 1 chunk for short text" "Got: $CHUNK_TEST"
 fi
 
-# insights
-echo ""
-echo "Phase 4: Insights command"
-
-RESULT=$(run_command "insights")
-if echo "$RESULT" | grep -q "Journal Insights"; then
-  _pass "insights returns insights header"
+if echo "$CHUNK_TEST" | grep -q "LONG:5"; then
+  _pass "chunkMessage splits long text into multiple chunks"
 else
-  _fail "insights returns insights header" "Got: $RESULT"
-fi
-
-if echo "$RESULT" | grep -q "Total sessions"; then
-  _pass "insights shows session count"
-else
-  _fail "insights shows session count" "Got: $RESULT"
-fi
-
-# digest scores (no feedback data, should say so)
-echo ""
-echo "Phase 5: Digest scores command"
-
-RESULT=$(run_command "digest scores")
-if echo "$RESULT" | grep -q "No digest feedback\|Digest Feedback"; then
-  _pass "digest scores returns feedback or no-data message"
-else
-  _fail "digest scores returns feedback or no-data message" "Got: $RESULT"
-fi
-
-RESULT=$(run_command "scores")
-if echo "$RESULT" | grep -q "No digest feedback\|Digest Feedback"; then
-  _pass "scores shorthand works"
-else
-  _fail "scores shorthand works" "Got: $RESULT"
-fi
-
-# signals
-echo ""
-echo "Phase 6: Signals command"
-
-RESULT=$(run_command "signals")
-if echo "$RESULT" | grep -q "Signal Channels"; then
-  _pass "signals returns channel list"
-else
-  _fail "signals returns channel list" "Got: $RESULT"
-fi
-
-if echo "$RESULT" | grep -q "github"; then
-  _pass "signals shows github channel"
-else
-  _fail "signals shows github channel" "Got: $RESULT"
-fi
-
-if echo "$RESULT" | grep -q "intercom"; then
-  _pass "signals shows intercom channel"
-else
-  _fail "signals shows intercom channel" "Got: $RESULT"
-fi
-
-# Non-commands should return null (fall through to LLM)
-echo ""
-echo "Phase 7: Non-commands fall through"
-
-RESULT=$(run_command "what did the team work on yesterday")
-if [ "$RESULT" = "__NULL__" ]; then
-  _pass "regular query returns null (falls through)"
-else
-  _fail "regular query returns null (falls through)" "Got: $RESULT"
-fi
-
-RESULT=$(run_command "tell me about the architecture decisions")
-if [ "$RESULT" = "__NULL__" ]; then
-  _pass "decision trail query returns null (falls through)"
-else
-  _fail "decision trail query returns null (falls through)" "Got: $RESULT"
+  _fail "chunkMessage splits long text into multiple chunks" "Got: $CHUNK_TEST"
 fi
 
 echo ""

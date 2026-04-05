@@ -84,16 +84,16 @@ else
 fi
 
 echo ""
-echo "Test: JSON backend search works"
+echo "Test: JSON backend queryMetadata works"
 RESULT=$(TEAM_CONTEXT_STORAGE_BACKEND=json node -e "
   const cs = require('$REPO_ROOT/bin/content-store.js');
-  const results = cs.searchText('signal connectors', { storePath: '$JSON_STORE', journalDir: '$JOURNAL_DIR' });
+  const results = cs.queryMetadata({ storePath: '$JSON_STORE' });
   console.log('COUNT:' + results.length);
 ")
 if echo "$RESULT" | grep -q "COUNT:[1-9]"; then
-    _pass "JSON backend searchText"
+    _pass "JSON backend queryMetadata"
 else
-    _fail "JSON backend searchText" "Got: $RESULT"
+    _fail "JSON backend queryMetadata" "Got: $RESULT"
 fi
 
 echo ""
@@ -157,16 +157,16 @@ else
 fi
 
 echo ""
-echo "Test: SQLite backend search works"
+echo "Test: SQLite backend queryMetadata works"
 RESULT=$(TEAM_CONTEXT_STORAGE_BACKEND=sqlite node -e "
   const cs = require('$REPO_ROOT/bin/content-store.js');
-  const results = cs.searchText('signal connectors', { storePath: '$SQLITE_STORE', journalDir: '$JOURNAL_DIR' });
+  const results = cs.queryMetadata({ storePath: '$SQLITE_STORE' });
   console.log('COUNT:' + results.length);
 ")
 if echo "$RESULT" | grep -q "COUNT:[1-9]"; then
-    _pass "SQLite backend searchText"
+    _pass "SQLite backend queryMetadata"
 else
-    _fail "SQLite backend searchText" "Got: $RESULT"
+    _fail "SQLite backend queryMetadata" "Got: $RESULT"
 fi
 
 echo ""

@@ -2,6 +2,18 @@
 
 All notable changes to Wayfind are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.0.70] - 2026-04-05
+
+### Changed
+- **Bot query engine replaced with LLM tool-use relay.** The Slack bot no longer parses intent with hand-rolled temporal/author/signal detection (~600 lines removed). Instead, it sends the user's question to Claude (Haiku) with `search_context` and `get_entry` as tools — Claude decides how to search, what date ranges to use, and which authors to filter. Same @wayfind UX, dramatically smarter answers, fraction of the code.
+- **`search_context` consolidated.** New parameters: `until` (date upper bound), `user` (author filter), `source` (journal/conversation/signal filter), `mode=browse` (date-sorted metadata listing). The `list_recent` tool has been merged into `search_context` with `mode=browse`.
+- **Container search API** (`POST /api/search`) now accepts `until`, `user`, `source`, and `mode=browse`. Query is optional when using browse mode.
+
+### Removed
+- **`list_recent` MCP tool** — use `search_context` with `mode=browse` instead.
+- **Text search** (`mode=text`, `searchText()`) removed entirely. When semantic search is unavailable (no embeddings), the system falls back to date-sorted browse with a friendly hint to run `wayfind reindex`.
+- **Bot direct commands** (`help`, `version`, `members`, `insights`, `signals`, `digest scores`) — removed. The bot now focuses on answering questions via tool-use. Use the CLI for diagnostics.
+
 ## [2.0.69] - 2026-04-04
 
 ### Fixed

@@ -470,62 +470,7 @@ echo "5. Full-text search"
 echo "===================="
 
 echo ""
-echo "Test: searchText works without embeddings"
-# Create a separate store with no embeddings
-TEXT_STORE="$TEST_HOME/text-store"
-mkdir -p "$TEXT_STORE"
-node -e "
-  const cs = require('$REPO_ROOT/bin/content-store.js');
-  cs.indexJournals({
-    journalDir: '$JOURNAL_DIR',
-    storePath: '$TEXT_STORE',
-    embeddings: false,
-  }).then(() => {});
-"
-RESULT=$(node -e "
-  const cs = require('$REPO_ROOT/bin/content-store.js');
-  const results = cs.searchText('signal connectors', { storePath: '$TEXT_STORE' });
-  console.log('COUNT:' + results.length);
-  if (results.length > 0) {
-    console.log('HAS_SCORE:' + (typeof results[0].score === 'number'));
-  }
-")
-if echo "$RESULT" | grep -q "COUNT:[1-9]" && echo "$RESULT" | grep -qF "HAS_SCORE:true"; then
-    _pass "full-text search works"
-else
-    _fail "full-text search works" "Unexpected: $RESULT"
-fi
-
-echo ""
-echo "Test: searchText matches title and repo"
-RESULT=$(node -e "
-  const cs = require('$REPO_ROOT/bin/content-store.js');
-  const results = cs.searchText('Wayfind digest', { storePath: '$TEXT_STORE' });
-  console.log('COUNT:' + results.length);
-  if (results.length > 0) {
-    console.log('REPO:' + results[0].entry.repo);
-  }
-")
-if echo "$RESULT" | grep -q "COUNT:[1-9]"; then
-    _pass "full-text matches fields"
-else
-    _fail "full-text matches fields" "Unexpected: $RESULT"
-fi
-
-echo ""
-echo "Test: searchText applies filters"
-RESULT=$(node -e "
-  const cs = require('$REPO_ROOT/bin/content-store.js');
-  const results = cs.searchText('monthly refresh', { storePath: '$TEXT_STORE', repo: 'analytics-infrastructure' });
-  const allMatch = results.every(r => r.entry.repo.toLowerCase() === 'analytics-infrastructure');
-  console.log('ALL_MATCH:' + allMatch);
-  console.log('COUNT:' + results.length);
-")
-if echo "$RESULT" | grep -qF "ALL_MATCH:true"; then
-    _pass "full-text applies filters"
-else
-    _fail "full-text applies filters" "Filter not applied: $RESULT"
-fi
+echo "Note: searchText tests removed — text search replaced by semantic + browse fallback"
 
 # ── 6. Metadata query ──────────────────────────────────────────────────────
 
@@ -755,16 +700,17 @@ else
 fi
 
 echo ""
-echo "Test: searchText with no index returns empty"
+echo "Test: searchJournals with no index returns empty"
 RESULT=$(node -e "
   const cs = require('$REPO_ROOT/bin/content-store.js');
-  const results = cs.searchText('anything', { storePath: '$TEST_HOME/no-such-store' });
-  console.log('COUNT:' + results.length);
+  cs.searchJournals('anything', { storePath: '$TEST_HOME/no-such-store' }).then(results => {
+    console.log('COUNT:' + results.length);
+  });
 ")
 if echo "$RESULT" | grep -qF "COUNT:0"; then
-    _pass "searchText no index returns empty"
+    _pass "searchJournals no index returns empty"
 else
-    _fail "searchText no index returns empty" "Expected empty: $RESULT"
+    _fail "searchJournals no index returns empty" "Expected empty: $RESULT"
 fi
 
 echo ""
@@ -985,18 +931,18 @@ else
 fi
 
 echo ""
-echo "Test: searchText finds entries by author name"
+echo "Test: queryMetadata filters by author"
 RESULT=$(node -e "
   const cs = require('$REPO_ROOT/bin/content-store.js');
-  const results = cs.searchText('greg', { storePath: '$AUTHOR_STORE', journalDir: '$JOURNAL_DIR' });
+  const results = cs.queryMetadata({ storePath: '$AUTHOR_STORE', user: 'greg' });
   console.log('COUNT:' + results.length);
-  const allGreg = results.every(r => r.entry.user === 'greg' || r.entry.user === 'fallback-user');
-  console.log('HAS_RESULTS:' + (results.length > 0));
+  const allGreg = results.every(r => r.entry.user === 'greg');
+  console.log('ALL_GREG:' + allGreg);
 ")
 if echo "$RESULT" | grep -q "COUNT:[1-9]"; then
-    _pass "searchText finds by author"
+    _pass "queryMetadata filters by author"
 else
-    _fail "searchText finds by author" "Expected results for greg, got: $RESULT"
+    _fail "queryMetadata filters by author" "Expected results for greg, got: $RESULT"
 fi
 
 echo ""

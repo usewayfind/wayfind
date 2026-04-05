@@ -610,7 +610,7 @@ async function indexJournals(options = {}) {
 
 /**
  * Search journals using semantic similarity.
- * Falls back to searchText() if no embeddings available.
+ * Falls back to queryMetadata() browse if no embeddings available.
  * @param {string} query - Search query
  * @param {Object} [options]
  * @param {string} [options.storePath] - Content store directory
@@ -633,7 +633,11 @@ async function searchJournals(query, options = {}) {
   const hasEmbeddings = Object.keys(embeddings).length > 0;
 
   if (!hasEmbeddings) {
-    return searchText(query, options);
+    const browseResults = queryMetadata(options);
+    return browseResults.slice(0, limit).map(r => ({
+      ...r, score: null,
+      _hint: 'Semantic search unavailable — showing recent entries by date. Run "wayfind reindex" to enable semantic search.',
+    }));
   }
 
   // Generate query embedding
@@ -641,8 +645,12 @@ async function searchJournals(query, options = {}) {
   try {
     queryVec = await llm.generateEmbedding(query);
   } catch {
-    // Fall back to text search if embedding fails
-    return searchText(query, options);
+    // Fall back to browse if embedding generation fails
+    const browseResults = queryMetadata(options);
+    return browseResults.slice(0, limit).map(r => ({
+      ...r, score: null,
+      _hint: 'Semantic search unavailable — showing recent entries by date. Run "wayfind reindex" to enable semantic search.',
+    }));
   }
 
   // Score all entries
@@ -659,143 +667,6 @@ async function searchJournals(query, options = {}) {
   // Sort by score descending
   results.sort((a, b) => b.score - a.score);
 
-  return results.slice(0, limit);
-}
-
-/**
- * Full-text search across journal entries.
- * Works without any API key. Matches query words against title, repo, tags.
- * @param {string} query - Search query
- * @param {Object} [options]
- * @param {string} [options.storePath] - Content store directory
- * @param {number} [options.limit] - Max results (default: 10)
- * @param {string} [options.repo] - Filter by repo
- * @param {string} [options.since] - Filter by date (YYYY-MM-DD)
- * @param {string} [options.until] - Filter by date (YYYY-MM-DD)
- * @param {boolean} [options.drifted] - Filter by drift status
- * @returns {Array<{ id: string, score: number, entry: Object }>}
- */
-function searchText(query, options = {}) {
-  const storePath = options.storePath || resolveStorePath();
-  const journalDir = options.journalDir || DEFAULT_JOURNAL_DIR;
-  const limit = options.limit || 10;
-
-  const index = getBackend(storePath).loadIndex();
-  if (!index) return [];
-
-  // Normalize: split on whitespace, hyphens, underscores
-  const queryWords = query.toLowerCase().split(/[\s\-_]+/).filter(w => w.length > 1);
-  if (queryWords.length === 0) return [];
-
-  // Pre-load journal content for full-text search (cache by date+user key)
-  const journalCache = {};
-  function getJournalContent(date, user) {
-    const cacheKey = user ? `${date}-${user}` : date;
-    if (journalCache[cacheKey] !== undefined) return journalCache[cacheKey];
-    if (!journalDir) { journalCache[cacheKey] = null; return null; }
-    // Try authored filename first, then plain date filename
-    const candidates = user
-      ? [path.join(journalDir, `${date}-${user}.md`), path.join(journalDir, `${date}.md`)]
-      : [path.join(journalDir, `${date}.md`)];
-    let content = null;
-    for (const filePath of candidates) {
-      try {
-        content = fs.readFileSync(filePath, 'utf8').toLowerCase();
-        break;
-      } catch {
-        // Try next candidate
-      }
-    }
-    journalCache[cacheKey] = content;
-    return content;
-  }
-
-  const results = [];
-  for (const [id, entry] of Object.entries(index.entries)) {
-    if (!applyFilters(entry, options)) continue;
-
-    // Build searchable text from entry metadata (normalize hyphens/underscores)
-    let searchable = [
-      entry.title,
-      entry.repo,
-      entry.date,
-      entry.user,
-      ...(entry.tags || []),
-    ].filter(Boolean).join(' ').toLowerCase().replace(/[-_]/g, ' ');
-
-    // For signal entries, read content directly from the signal file
-    if (entry.source === 'signal') {
-      const signalsDir = options.signalsDir || resolveSignalsDir();
-      if (signalsDir) {
-        // Signal files live at signalsDir/<channel>/<date>.md or signalsDir/<channel>/<owner>/<repo>/<date>.md
-        // The repo field tells us the path: "signals/<channel>" or "<owner>/<repo>"
-        const repo = entry.repo || '';
-        const candidates = [];
-        if (repo.startsWith('signals/')) {
-          const channel = repo.replace('signals/', '');
-          candidates.push(path.join(signalsDir, channel, `${entry.date}.md`));
-          candidates.push(path.join(signalsDir, channel, `${entry.date}-summary.md`));
-        } else if (repo.includes('/')) {
-          // owner/repo format — find which channel it's under
-          for (const channel of ['github', 'intercom', 'notion']) {
-            candidates.push(path.join(signalsDir, channel, repo, `${entry.date}.md`));
-          }
-        }
-        for (const fp of candidates) {
-          try {
-            const content = fs.readFileSync(fp, 'utf8').toLowerCase();
-            searchable += ' ' + content.replace(/[-_]/g, ' ');
-            break;
-          } catch {
-            // Try next candidate
-          }
-        }
-      }
-    }
-
-    // Also include the full journal entry content if available
-    const journalContent = entry.source !== 'signal' ? getJournalContent(entry.date, entry.user) : null;
-    if (journalContent) {
-      // Find this entry's section in the journal file.
-      // Try exact match first, then normalize hyphens/spaces for fuzzy match.
-      const repoTitle = `${entry.repo} — ${entry.title}`.toLowerCase();
-      let idx = journalContent.indexOf(repoTitle);
-      if (idx === -1) {
-        // Normalize both sides: collapse hyphens, underscores, em-dashes, and extra spaces
-        const norm = (s) => s.replace(/[-_\u2014\u2013]/g, ' ').replace(/\s+/g, ' ').trim();
-        const normalized = norm(repoTitle);
-        // Search through journal headers for a normalized match
-        const headerRegex = /\n## (.+)/g;
-        let match;
-        while ((match = headerRegex.exec(journalContent)) !== null) {
-          const headerNorm = norm(match[1]);
-          if (headerNorm.includes(normalized) || normalized.includes(headerNorm)) {
-            idx = match.index + 1; // skip the \n
-            break;
-          }
-        }
-      }
-      if (idx !== -1) {
-        // Extract from header to next header (or end of file)
-        const nextHeader = journalContent.indexOf('\n## ', idx + 1);
-        const section = nextHeader !== -1 ? journalContent.slice(idx, nextHeader) : journalContent.slice(idx);
-        searchable += ' ' + section.replace(/[-_]/g, ' ');
-      }
-    }
-
-    // Score: count of matching query words
-    let matches = 0;
-    for (const word of queryWords) {
-      if (searchable.includes(word)) matches++;
-    }
-
-    if (matches > 0) {
-      const score = Math.round((matches / queryWords.length) * 1000) / 1000;
-      results.push({ id, score, entry });
-    }
-  }
-
-  results.sort((a, b) => b.score - a.score);
   return results.slice(0, limit);
 }
 
@@ -2480,7 +2351,6 @@ module.exports = {
   applyContextShiftToState,
   generateOnboardingPack,
   searchJournals,
-  searchText,
   queryMetadata,
   extractInsights,
   computeQualityProfile,

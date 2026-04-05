@@ -228,41 +228,30 @@ async function proxyGetEntry(id) {
 const TOOLS = [
   {
     name: 'search_context',
-    description: 'Search the team\'s full decision history across all repos and all engineers. Returns ranked journal entries, decisions, and signals. Use this — not file reads — to answer any question about past work, architectural decisions, what was decided, or team activity. The content store covers history that state files cannot.',
+    description: 'Search the team\'s decision history across all repos and engineers. Returns ranked entries. Use mode=browse with since/until for time-range queries ("what happened this week"). Use mode=semantic with a query for topical searches. Pass dates, authors, and repos as explicit parameters.',
     inputSchema: {
       type: 'object',
       properties: {
-        query: { type: 'string', description: 'Natural language search query' },
+        query: { type: 'string', description: 'Natural language search query (required for semantic mode, optional for browse)' },
         limit: { type: 'number', description: 'Max results (default: 10)' },
         repo: { type: 'string', description: 'Filter by repository name (e.g. "MyService", "MyOrg/my-repo")' },
         since: { type: 'string', description: 'Filter to entries on or after this date (YYYY-MM-DD)' },
-        mode: { type: 'string', enum: ['semantic', 'text'], description: 'Search mode — semantic uses embeddings, text uses keyword matching. Defaults to semantic if embeddings available.' },
+        until: { type: 'string', description: 'Filter to entries on or before this date (YYYY-MM-DD)' },
+        user: { type: 'string', description: 'Filter by author slug (lowercase first name, e.g. "nick")' },
+        source: { type: 'string', enum: ['journal', 'conversation', 'signal'], description: 'Filter by entry source type' },
+        mode: { type: 'string', enum: ['semantic', 'browse'], description: 'Search strategy. semantic (default) uses embeddings for relevance ranking. browse returns entries sorted by date (best for time-range queries).' },
       },
-      required: ['query'],
     },
   },
   {
     name: 'get_entry',
-    description: 'Retrieve the full content of a specific journal or signal entry by ID. Use the IDs returned by search_context or list_recent.',
+    description: 'Retrieve the full content of a specific journal or signal entry by ID. Use the IDs returned by search_context.',
     inputSchema: {
       type: 'object',
       properties: {
-        id: { type: 'string', description: 'Entry ID from search_context or list_recent results' },
+        id: { type: 'string', description: 'Entry ID from search_context results' },
       },
       required: ['id'],
-    },
-  },
-  {
-    name: 'list_recent',
-    description: 'List recent journal entries and decisions, optionally filtered by repo or date range. Returns metadata (no full content — use get_entry for that).',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        limit: { type: 'number', description: 'Max entries to return (default: 20)' },
-        repo: { type: 'string', description: 'Filter by repository name' },
-        since: { type: 'string', description: 'Filter to entries on or after this date (YYYY-MM-DD)' },
-        source: { type: 'string', enum: ['journal', 'conversation', 'signal'], description: 'Filter by entry source type' },
-      },
     },
   },
   {
@@ -327,25 +316,52 @@ const TOOLS = [
 // ── Tool handlers ────────────────────────────────────────────────────────────
 
 async function handleSearchContext(args) {
-  const { query, limit = 10, repo, since, mode } = args;
+  const { query, limit = 10, repo, since, until, user, source, mode: rawMode } = args;
 
-  // Try container first for semantic search (has embeddings for full team)
-  if (mode !== 'text') {
-    const containerResult = await proxySearch({ query, limit, repo, since, mode });
+  // Auto-switch to browse if no query provided
+  const mode = (!query && rawMode !== 'browse') ? 'browse' : (rawMode || 'semantic');
+
+  // Browse mode — return entries sorted by date (no embeddings needed)
+  if (mode === 'browse') {
+    const opts = { limit, repo, since, until, user, source };
+
+    // Try container first
+    const containerResult = await proxySearch({ query, limit, repo, since, until, user, source, mode: 'browse' });
     if (containerResult && containerResult.found > 0) {
       containerResult.source = 'container';
       return containerResult;
     }
+
+    // Fall back to local
+    const results = contentStore.queryMetadata(opts);
+    const top = results.slice(0, limit);
+    return {
+      found: results.length,
+      showing: top.length,
+      source: 'local',
+      results: top.map(r => ({
+        id: r.id,
+        date: r.entry.date,
+        repo: r.entry.repo,
+        title: r.entry.title,
+        source: r.entry.source,
+        user: r.entry.user || null,
+        tags: r.entry.tags || [],
+        summary: r.entry.summary || null,
+      })),
+    };
   }
 
-  // Fall back to local search
-  const opts = { limit, repo, since };
-  let results;
-  if (mode === 'text') {
-    results = contentStore.searchText(query, opts);
-  } else {
-    results = await contentStore.searchJournals(query, opts);
+  // Semantic mode — try container first (has embeddings for full team)
+  const containerResult = await proxySearch({ query, limit, repo, since, until, user, source, mode });
+  if (containerResult && containerResult.found > 0) {
+    containerResult.source = 'container';
+    return containerResult;
   }
+
+  // Fall back to local semantic search
+  const opts = { limit, repo, since, until, user, source };
+  const results = await contentStore.searchJournals(query, opts);
 
   if (!results || results.length === 0) {
     return { found: 0, results: [], source: 'local', hint: 'No matches. Try a broader query or check wayfind reindex.' };
@@ -361,6 +377,7 @@ async function handleSearchContext(args) {
       repo: r.entry.repo,
       title: r.entry.title,
       source: r.entry.source,
+      user: r.entry.user || null,
       tags: r.entry.tags || [],
       summary: r.entry.summary || null,
     })),
@@ -397,25 +414,6 @@ async function handleGetEntry(args) {
   return { error: `Entry not found: ${id}` };
 }
 
-function handleListRecent(args) {
-  const { limit = 20, repo, since, source } = args;
-  const opts = { limit, repo, since, source };
-  const results = contentStore.queryMetadata(opts);
-  const top = results.slice(0, limit);
-
-  return {
-    total: results.length,
-    showing: top.length,
-    entries: top.map(r => ({
-      id: r.id,
-      date: r.entry.date,
-      repo: r.entry.repo,
-      title: r.entry.title,
-      source: r.entry.source,
-      tags: r.entry.tags || [],
-    })),
-  };
-}
 
 function handleGetSignals(args) {
   const { channel, limit = 20 } = args;
@@ -590,7 +588,6 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   switch (name) {
     case 'search_context':   result = await handleSearchContext(args); break;
     case 'get_entry':        result = await handleGetEntry(args); break;
-    case 'list_recent':      result = handleListRecent(args); break;
     case 'get_signals':      result = handleGetSignals(args); break;
     case 'get_team_status':  result = handleGetTeamStatus(args); break;
     case 'get_personas':     result = handleGetPersonas(); break;

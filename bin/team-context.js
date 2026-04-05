@@ -1672,7 +1672,7 @@ async function runSearchJournals(args) {
   const query = positional.join(' ');
 
   if (!query) {
-    console.error('Usage: wayfind search-journals <query> [--text] [--limit N] [--repo <name>] [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--drifted]');
+    console.error('Usage: wayfind search-journals <query> [--limit N] [--repo <name>] [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--drifted]');
     process.exit(1);
   }
 
@@ -1686,12 +1686,7 @@ async function runSearchJournals(args) {
   };
 
   try {
-    let results;
-    if (opts.text) {
-      results = contentStore.searchText(query, searchOpts);
-    } else {
-      results = await contentStore.searchJournals(query, searchOpts);
-    }
+    const results = await contentStore.searchJournals(query, searchOpts);
 
     if (results.length === 0) {
       console.log('No results found.');
@@ -4619,31 +4614,47 @@ function startHealthServer() {
       if (!checkApiAuth(req, res)) return;
       try {
         const body = await parseJsonBody(req);
-        const { query, limit = 10, repo, since, mode } = body;
-        if (!query) {
-          res.writeHead(400, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ error: 'query is required' }));
-          return;
-        }
+        const { query, limit = 10, repo, since, until, user, source, mode: rawMode } = body;
 
-        const opts = { limit, repo, since };
-        let results;
-        if (mode === 'text') {
-          results = contentStore.searchText(query, opts);
+        // Auto-switch to browse if no query provided
+        const mode = (!query && rawMode !== 'browse') ? 'browse' : (rawMode || 'semantic');
+
+        let mapped;
+        if (mode === 'browse') {
+          // Browse mode — return entries sorted by date
+          const results = contentStore.queryMetadata({ limit, repo, since, until, user, source });
+          const top = results.slice(0, limit);
+          mapped = top.map(r => ({
+            id: r.id,
+            date: r.entry.date,
+            repo: r.entry.repo,
+            title: r.entry.title,
+            source: r.entry.source,
+            user: r.entry.user || null,
+            tags: r.entry.tags || [],
+            summary: r.entry.summary || null,
+          }));
         } else {
-          results = await contentStore.searchJournals(query, opts);
+          // Semantic mode — requires query
+          if (!query) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'query is required for semantic mode' }));
+            return;
+          }
+          const opts = { limit, repo, since, until, user, source };
+          const results = await contentStore.searchJournals(query, opts);
+          mapped = (results || []).map(r => ({
+            id: r.id,
+            score: r.score ? Math.round(r.score * 1000) / 1000 : null,
+            date: r.entry.date,
+            repo: r.entry.repo,
+            title: r.entry.title,
+            source: r.entry.source,
+            user: r.entry.user || null,
+            tags: r.entry.tags || [],
+            summary: r.entry.summary || null,
+          }));
         }
-
-        const mapped = (results || []).map(r => ({
-          id: r.id,
-          score: r.score ? Math.round(r.score * 1000) / 1000 : null,
-          date: r.entry.date,
-          repo: r.entry.repo,
-          title: r.entry.title,
-          source: r.entry.source,
-          tags: r.entry.tags || [],
-          summary: r.entry.summary || null,
-        }));
 
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ found: mapped.length, results: mapped }));
@@ -6304,7 +6315,6 @@ function showHelp() {
   console.log('  wayfind index-journals --dir <path>           Custom journal directory');
   console.log('  wayfind index-journals --no-embeddings        Skip embedding generation');
   console.log('  wayfind search-journals <query>               Semantic search (needs OPENAI_API_KEY)');
-  console.log('  wayfind search-journals <query> --text        Full-text search (no API key)');
   console.log('  wayfind search-journals <query> --repo wayfind --since 2026-02-01');
   console.log('  wayfind insights                              Show journal insights');
   console.log('  wayfind insights --json                       JSON output');

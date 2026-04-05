@@ -302,6 +302,92 @@ async function call(config, systemPrompt, userContent) {
   }
 }
 
+// ── Tool-use relay ──────────────────────────────────────────────────────────
+
+/**
+ * Call the Anthropic API with tool-use support, looping until the model stops.
+ * @param {Object} config - Provider configuration (must be Anthropic)
+ * @param {string} systemPrompt - System prompt
+ * @param {string} userContent - User message text
+ * @param {Array} tools - Anthropic tool-use format tool definitions
+ * @param {Function} handleToolCall - async (name, input) => result
+ * @returns {Promise<string>} - Final text response
+ */
+async function callWithTools(config, systemPrompt, userContent, tools, handleToolCall) {
+  const apiKey = process.env[config.api_key_env];
+  if (!apiKey) {
+    throw new Error(`Anthropic: Missing API key. Set ${config.api_key_env} environment variable.`);
+  }
+
+  const headers = {
+    'x-api-key': apiKey,
+    'anthropic-version': ANTHROPIC_VERSION,
+  };
+
+  const MAX_ITERATIONS = 10;
+  let messages = [{ role: 'user', content: userContent }];
+
+  for (let i = 0; i < MAX_ITERATIONS; i++) {
+    const payload = JSON.stringify({
+      model: config.model,
+      max_tokens: config.max_tokens || DEFAULT_MAX_TOKENS,
+      system: systemPrompt,
+      messages,
+      tools,
+    });
+
+    const res = await httpPost(ANTHROPIC_API_URL, headers, payload);
+    checkResponse(res, 'Anthropic');
+
+    let data;
+    try {
+      data = JSON.parse(res.body);
+    } catch {
+      throw new Error('Anthropic: Failed to parse response JSON.');
+    }
+
+    if (!data.content || !Array.isArray(data.content)) {
+      throw new Error('Anthropic: Response missing content array.');
+    }
+
+    // If the model is done, extract and return the final text
+    if (data.stop_reason !== 'tool_use') {
+      const textBlock = data.content.find(b => b.type === 'text');
+      return textBlock ? textBlock.text : '';
+    }
+
+    // Process tool calls
+    const toolUseBlocks = data.content.filter(b => b.type === 'tool_use');
+    if (toolUseBlocks.length === 0) {
+      // stop_reason is tool_use but no tool_use blocks — treat as done
+      const textBlock = data.content.find(b => b.type === 'text');
+      return textBlock ? textBlock.text : '';
+    }
+
+    // Build tool results
+    const toolResults = [];
+    for (const block of toolUseBlocks) {
+      let result;
+      try {
+        result = await handleToolCall(block.name, block.input);
+      } catch (err) {
+        result = { error: err.message };
+      }
+      toolResults.push({
+        type: 'tool_result',
+        tool_use_id: block.id,
+        content: typeof result === 'string' ? result : JSON.stringify(result),
+      });
+    }
+
+    // Append assistant message + tool results, then loop
+    messages.push({ role: 'assistant', content: data.content });
+    messages.push({ role: 'user', content: toolResults });
+  }
+
+  throw new Error('Anthropic: Tool-use loop exceeded maximum iterations (10).');
+}
+
 // ── Auto-detect available provider ───────────────────────────────────────────
 
 /**
@@ -535,6 +621,7 @@ async function generateEmbeddingAzure(text, options = {}) {
 
 module.exports = {
   call,
+  callWithTools,
   detect,
   generateEmbedding,
   getEmbeddingProviderInfo,

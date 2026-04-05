@@ -180,60 +180,8 @@ console.log(config.intercom.last_pull !== null ? 'UPDATED' : 'NULL');
 " 2>&1)
 assert_eq "last_pull updated after pull" "UPDATED" "$LAST_PULL"
 
-# Test: intent classification
-echo ""
-echo "Intent Classification:"
-INTENT_TEST=$(node -e "
-const { classifyIntent } = require('$SCRIPT_DIR/bin/slack-bot');
-const tests = [
-  ['are there any interesting trends coming out of Intercom this week?', 'signals', 'intercom'],
-  ['what customer complaints are trending in intercom?', 'signals', 'intercom'],
-  ['what support tickets are piling up?', 'signals', 'intercom'],
-  ['what did we decide about the auth refactor?', 'engineering', undefined],
-  ['what architecture decisions were made last week?', 'engineering', undefined],
-  ['what intercom work was done and what are the customer trends?', 'mixed', 'intercom'],
-  ['what conversations are open in intercom?', 'signals', 'intercom'],
-];
-let pass = 0;
-for (const [query, expectedType, expectedChannel] of tests) {
-  const result = classifyIntent(query);
-  if (result.type === expectedType && result.channel === expectedChannel) {
-    pass++;
-    console.log('INTENT_OK:' + query.slice(0, 40));
-  } else {
-    console.log('INTENT_FAIL:' + query.slice(0, 40) + ' got=' + result.type + '/' + result.channel);
-  }
-}
-console.log('INTENT_TOTAL:' + pass + '/' + tests.length);
-" 2>&1)
-assert_contains "intent classification passes all cases" "INTENT_TOTAL:7/7" "$INTENT_TEST"
-
-# Test: signal search finds files
-echo ""
-echo "Signal Search:"
-SEARCH_TEST=$(node -e "
-const { searchSignals } = require('$SCRIPT_DIR/bin/slack-bot');
-
-// Point HOME at our test directory which has signal files from the earlier pull
-const result = searchSignals('intercom');
-console.log('AVAILABLE:' + result.available);
-console.log('FILES:' + result.files.length);
-if (result.content.includes('Intercom Signals')) console.log('HAS_CONTENT');
-if (result.content.includes('Volume')) console.log('HAS_VOLUME');
-" 2>&1)
-assert_contains "signal search finds intercom files" "AVAILABLE:true" "$SEARCH_TEST"
-assert_contains "signal search returns content" "HAS_CONTENT" "$SEARCH_TEST"
-assert_contains "signal content has volume data" "HAS_VOLUME" "$SEARCH_TEST"
-
-# Test: signal search for missing channel
-MISSING_TEST=$(node -e "
-const { searchSignals } = require('$SCRIPT_DIR/bin/slack-bot');
-const result = searchSignals('jira');
-console.log('AVAILABLE:' + result.available);
-console.log('FILES:' + result.files.length);
-" 2>&1)
-assert_eq "missing channel returns unavailable" "AVAILABLE:false" "$(echo "$MISSING_TEST" | grep 'AVAILABLE:')"
-assert_eq "missing channel returns no files" "FILES:0" "$(echo "$MISSING_TEST" | grep 'FILES:')"
+# Note: intent classification and signal search tests removed — the bot now uses
+# LLM tool-use relay for intent classification instead of keyword heuristics.
 
 # Summary
 echo ""

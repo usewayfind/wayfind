@@ -8,12 +8,11 @@ Searchable index of session journal insights. Index locally, search by text or s
 # Index your journals (auto-detects journal directory)
 wayfind index-journals
 
-# Full-text search (no API key needed)
-wayfind search-journals "authentication" --text
-
-# Semantic search (requires OPENAI_API_KEY)
-export OPENAI_API_KEY=sk-...
+# Semantic search (uses local Xenova embeddings by default, or OPENAI_API_KEY)
 wayfind search-journals "how did we handle auth?"
+
+# Browse by date (no embeddings needed)
+wayfind search-journals --since 2026-04-01 --until 2026-04-05
 
 # View insights
 wayfind insights
@@ -68,15 +67,16 @@ The index is **incremental** — it hashes each entry's content and only re-proc
 
 ### Searching
 
-**Full-text search** (`--text` flag or automatic when no embeddings exist):
-- Matches query words against title, repo, date, tags, and full journal entry content
-- No API key required — works on day zero
-- Scored by proportion of matching query words
-
-**Semantic search** (default when embeddings exist):
+**Semantic search** (default):
 - Generates a query embedding, computes cosine similarity against all entries
-- Requires `OPENAI_API_KEY` for the embedding API (text-embedding-3-small)
-- Falls back to full-text search if embedding generation fails
+- Uses local Xenova `all-MiniLM-L6-v2` model by default (no API key needed)
+- Optionally uses `OPENAI_API_KEY` for OpenAI embeddings (text-embedding-3-small)
+- Falls back to date-sorted browse if no embeddings are available, with a hint to run `wayfind reindex`
+
+**Browse mode** (date-sorted, no query needed):
+- Lists entries sorted by date descending
+- No embeddings required — works on day zero
+- Use with `--since`/`--until` for time-range queries
 
 Both modes support filters: `--repo`, `--since`, `--until`, `--drifted`.
 
@@ -95,7 +95,7 @@ Both modes support filters: `--repo`, `--since`, `--until`, `--drifted`.
 wayfind index-journals [--dir <path>] [--store <path>] [--no-embeddings]
 wayfind reindex [--journals-only] [--conversations-only] [--export]
 wayfind index-conversations [--dir <path>] [--store <path>] [--since YYYY-MM-DD]
-wayfind search-journals <query> [--text] [--limit N] [--repo <name>] [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--drifted]
+wayfind search-journals <query> [--limit N] [--repo <name>] [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--drifted]
 wayfind insights [--json] [--store <path>]
 ```
 
@@ -111,7 +111,6 @@ wayfind insights [--json] [--store <path>]
 
 | Flag | Description |
 |------|-------------|
-| `--text` | Force full-text search (skip semantic) |
 | `--limit N` | Max results (default: 10) |
 | `--repo <name>` | Filter by repo/project name |
 | `--since YYYY-MM-DD` | Only entries on or after this date |

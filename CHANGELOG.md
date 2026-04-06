@@ -2,6 +2,11 @@
 
 All notable changes to Wayfind are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.0.72] - 2026-04-06
+
+### Improved
+- **Minimal post-install output.** Setup now prints 3 lines instead of 25+. Per-file install logs replaced with a single aggregate summary (e.g. "4 config files, 2 hooks, 5 commands, MCP server"). Removed section headers, personas dump, and "Edit global-state.md" warning. First-time users see a clean path to value.
+
 ## [2.0.71] - 2026-04-06
 
 ### Improved

@@ -145,7 +145,6 @@ if [ ! -d "$SPEC_DIR" ]; then
 fi
 
 echo ""
-echo "Installing Wayfind for: $TOOL"
 [ "$DRY_RUN" = true ] && warn "Dry-run mode — no files will be modified"
 [ "$UPDATE" = true ] && warn "Update mode: overwriting hook scripts and commands (memory files untouched)"
 
@@ -184,22 +183,23 @@ case "$TOOL" in
         ;;
 esac
 
+# ── Counters for aggregate output ─────────────────────────────────────────────
+
+CONFIG_FILES=0
+HOOKS_INSTALLED=0
+COMMANDS_INSTALLED=0
+MCP_OK=false
+
 # ── Step 1: Directories ────────────────────────────────────────────────────────
 
-header "Creating directories"
-
 run mkdir -p "$MEMORY_SUBDIR/journal"
-log "Memory directories: $MEMORY_SUBDIR/journal"
 
 if [ "$TOOL" = "claude-code" ]; then
     run mkdir -p "$HOME/.claude/hooks"
     run mkdir -p "$HOME/.claude/commands"
-    log "Claude Code hooks and commands directories"
 fi
 
 # ── Step 2: Global state file ─────────────────────────────────────────────────
-
-header "Global state file"
 
 if [ ! -f "$GLOBAL_STATE" ]; then
     if [ "$TOOL" = "claude-code" ]; then
@@ -214,28 +214,17 @@ if [ ! -f "$GLOBAL_STATE" ]; then
     else
         run cp "$SCRIPT_DIR/templates/global.md" "$GLOBAL_STATE"
     fi
-    log "Created $GLOBAL_STATE"
-else
-    info "Already exists: $GLOBAL_STATE — skipped"
+    CONFIG_FILES=$((CONFIG_FILES + 1))
 fi
 
 # ── Step 3: Admin state file (team/personal split) ───────────────────────────
-# For team repos, use templates/team-state.md (committed, shared context).
-# For personal notes, use templates/personal-state.md (gitignored, private).
-# The admin state file at ADMIN_STATE is the non-repo catch-all (email, admin, misc).
-
-header "Admin state file"
 
 if [ ! -f "$ADMIN_STATE" ]; then
     run cp "$SCRIPT_DIR/templates/repo-state.md" "$ADMIN_STATE"
-    log "Created $ADMIN_STATE"
-else
-    info "Already exists: $ADMIN_STATE — skipped"
+    CONFIG_FILES=$((CONFIG_FILES + 1))
 fi
 
 # ── Step 3b: Persona configuration ────────────────────────────────────────────
-
-header "Persona configuration"
 
 case "$TOOL" in
     claude-code) PERSONAS_DIR="$HOME/.claude/team-context" ;;
@@ -246,14 +235,10 @@ PERSONAS_DEST="$PERSONAS_DIR/personas.json"
 if [ ! -f "$PERSONAS_DEST" ]; then
     run mkdir -p "$PERSONAS_DIR"
     run cp "$SCRIPT_DIR/templates/personas.json" "$PERSONAS_DEST"
-    log "Created $PERSONAS_DEST (default personas — edit to customize)"
-else
-    info "Already exists: $PERSONAS_DEST — skipped (your customizations are preserved)"
+    CONFIG_FILES=$((CONFIG_FILES + 1))
 fi
 
 # ── Step 4: Tool-specific files ───────────────────────────────────────────────
-
-header "Tool-specific files ($TOOL)"
 
 case "$TOOL" in
     claude-code)
@@ -263,9 +248,10 @@ case "$TOOL" in
                 info "[dry-run] Would append Session State Protocol to $GLOBAL_CLAUDE_MD"
             else
                 touch "$GLOBAL_CLAUDE_MD"
-                append_if_missing "Session State Protocol" \
-                    "$(cat "$SPEC_DIR/CLAUDE.md-global-fragment.md")" \
-                    "$GLOBAL_CLAUDE_MD"
+                if ! grep -qF "Session State Protocol" "$GLOBAL_CLAUDE_MD" 2>/dev/null; then
+                    cat "$SPEC_DIR/CLAUDE.md-global-fragment.md" >> "$GLOBAL_CLAUDE_MD"
+                    CONFIG_FILES=$((CONFIG_FILES + 1))
+                fi
             fi
         fi
 
@@ -274,88 +260,63 @@ case "$TOOL" in
         if [ ! -f "$HOOK_DEST" ] || [ "$UPDATE" = true ]; then
             run cp "$SPEC_DIR/hooks/check-global-state.sh" "$HOOK_DEST"
             run chmod +x "$HOOK_DEST"
-            log "Installed hook: $HOOK_DEST"
-        else
-            info "Hook already exists: $HOOK_DEST — skipped"
+            HOOKS_INSTALLED=$((HOOKS_INSTALLED + 1))
         fi
 
         SESSION_END_DEST="$HOME/.claude/hooks/session-end.sh"
         if [ ! -f "$SESSION_END_DEST" ] || [ "$UPDATE" = true ]; then
             run cp "$SPEC_DIR/hooks/session-end.sh" "$SESSION_END_DEST"
             run chmod +x "$SESSION_END_DEST"
-            log "Installed hook: $SESSION_END_DEST"
-        else
-            info "Hook already exists: $SESSION_END_DEST — skipped"
+            HOOKS_INSTALLED=$((HOOKS_INSTALLED + 1))
         fi
 
-        # init-memory command
+        # Commands
         CMD_DEST="$HOME/.claude/commands/init-memory.md"
         if [ ! -f "$CMD_DEST" ] || [ "$UPDATE" = true ]; then
             run cp "$SPEC_DIR/commands/init-memory.md" "$CMD_DEST"
-            log "Installed command: /init-memory"
-        else
-            info "/init-memory command already exists — skipped"
+            COMMANDS_INSTALLED=$((COMMANDS_INSTALLED + 1))
         fi
 
-        # doctor command
         DOCTOR_CMD_DEST="$HOME/.claude/commands/doctor.md"
         if [ ! -f "$DOCTOR_CMD_DEST" ] || [ "$UPDATE" = true ]; then
             run cp "$SPEC_DIR/commands/doctor.md" "$DOCTOR_CMD_DEST"
-            log "Installed command: /doctor"
-        else
-            info "/doctor command already exists — skipped"
+            COMMANDS_INSTALLED=$((COMMANDS_INSTALLED + 1))
         fi
 
-        # doctor.sh script
+        # Support scripts
         run mkdir -p "$HOME/.claude/team-context"
         DOCTOR_DEST="$HOME/.claude/team-context/doctor.sh"
         if [ ! -f "$DOCTOR_DEST" ] || [ "$UPDATE" = true ]; then
             run cp "$SCRIPT_DIR/doctor.sh" "$DOCTOR_DEST"
             run chmod +x "$DOCTOR_DEST"
-            log "Installed doctor script: $DOCTOR_DEST"
-        else
-            info "doctor.sh already exists: $DOCTOR_DEST — skipped"
         fi
 
-        # journal-summary.sh script
         JOURNAL_DEST="$HOME/.claude/team-context/journal-summary.sh"
         if [ ! -f "$JOURNAL_DEST" ] || [ "$UPDATE" = true ]; then
             run cp "$SCRIPT_DIR/journal-summary.sh" "$JOURNAL_DEST"
             run chmod +x "$JOURNAL_DEST"
-            log "Installed journal summary script: $JOURNAL_DEST"
-        else
-            info "journal-summary.sh already exists: $JOURNAL_DEST — skipped"
         fi
 
-        # /journal command
         JOURNAL_CMD_DEST="$HOME/.claude/commands/journal.md"
         if [ ! -f "$JOURNAL_CMD_DEST" ] || [ "$UPDATE" = true ]; then
             run cp "$SPEC_DIR/commands/journal.md" "$JOURNAL_CMD_DEST"
-            log "Installed command: /journal"
-        else
-            info "/journal command already exists — skipped"
+            COMMANDS_INSTALLED=$((COMMANDS_INSTALLED + 1))
         fi
 
-        # /init-team command
         TEAM_CMD_DEST="$HOME/.claude/commands/init-team.md"
         if [ ! -f "$TEAM_CMD_DEST" ] || [ "$UPDATE" = true ]; then
             if [ -f "$SPEC_DIR/commands/init-team.md" ]; then
                 run cp "$SPEC_DIR/commands/init-team.md" "$TEAM_CMD_DEST"
-                log "Installed command: /init-team"
+                COMMANDS_INSTALLED=$((COMMANDS_INSTALLED + 1))
             fi
-        else
-            info "/init-team command already exists — skipped"
         fi
 
-        # /review-prs command
         REVIEW_CMD_DEST="$HOME/.claude/commands/review-prs.md"
         if [ ! -f "$REVIEW_CMD_DEST" ] || [ "$UPDATE" = true ]; then
             if [ -f "$SPEC_DIR/commands/review-prs.md" ]; then
                 run cp "$SPEC_DIR/commands/review-prs.md" "$REVIEW_CMD_DEST"
-                log "Installed command: /review-prs"
+                COMMANDS_INSTALLED=$((COMMANDS_INSTALLED + 1))
             fi
-        else
-            info "/review-prs command already exists — skipped"
         fi
 
         # settings.json — merge hooks, don't overwrite
@@ -365,7 +326,7 @@ case "$TOOL" in
 
         if [ ! -f "$SETTINGS" ]; then
             run cp "$SPEC_DIR/settings.json" "$SETTINGS"
-            log "Created $SETTINGS with hook registration"
+            CONFIG_FILES=$((CONFIG_FILES + 1))
         else
             # Merge both hooks into existing settings.json using Python
             NEEDS_MERGE=false
@@ -426,7 +387,6 @@ with open(out_path, "w") as f:
     f.write("\n")
 PYEOF
                         mv "$TMP_SETTINGS" "$SETTINGS"
-                        log "Merged hooks into existing $SETTINGS"
                     else
                         rm -f "$TMP_SETTINGS"
                         warn "Could not auto-merge hooks into $SETTINGS (malformed JSON or python3 unavailable)."
@@ -435,8 +395,6 @@ PYEOF
                 else
                     info "[dry-run] Would merge hooks into $SETTINGS"
                 fi
-            else
-                info "Hooks already registered in settings.json — skipped"
             fi
         fi
 
@@ -469,20 +427,19 @@ with open(out_path, "w") as f:
     f.write("\n")
 PYEOF
                         mv "$TMP_SETTINGS" "$SETTINGS"
-                        log "Registered wayfind MCP server in ~/.claude/settings.json"
+                        MCP_OK=true
                     else
                         rm -f "$TMP_SETTINGS"
-                        warn "Could not register MCP server — add manually to ~/.claude/settings.json:"
-                        warn "  \"mcpServers\": { \"wayfind\": { \"command\": \"$MCP_BIN\" } }"
+                        warn "Could not register MCP server — add manually to ~/.claude/settings.json"
                     fi
                 else
                     info "[dry-run] Would register wayfind MCP server ($MCP_BIN) in $SETTINGS"
                 fi
             else
-                info "MCP server already registered in settings.json — skipped"
+                MCP_OK=true
             fi
         else
-            warn "wayfind-mcp binary not found — skipping MCP registration. Re-run after npm install."
+            warn "wayfind-mcp not found — MCP registration skipped. Re-run setup after npm install."
         fi
 
         ;;
@@ -493,9 +450,7 @@ PYEOF
         GLOBAL_RULE="$HOME/.cursor/rules/ai-memory.mdc"
         if [ ! -f "$GLOBAL_RULE" ] || [ "${UPDATE:-false}" = true ]; then
             run cp "$SPEC_DIR/global-rule.mdc" "$GLOBAL_RULE"
-            log "Installed global Cursor rule: $GLOBAL_RULE"
-        else
-            info "Global Cursor rule already exists — skipped"
+            CONFIG_FILES=$((CONFIG_FILES + 1))
         fi
 
         # Per-repo rule (if --repo was passed)
@@ -505,8 +460,7 @@ PYEOF
                 run mkdir -p "$RULE_DIR"
                 if [ ! -f "$RULE_DIR/memory.mdc" ] || [ "${UPDATE:-false}" = true ]; then
                     run cp "$SPEC_DIR/repo-rule.mdc" "$RULE_DIR/memory.mdc"
-                    log "Installed repo rule: $RULE_DIR/memory.mdc"
-                    warn "Edit $RULE_DIR/memory.mdc to add repo name and initial status"
+                    CONFIG_FILES=$((CONFIG_FILES + 1))
                 else
                     info "Repo rule already exists — skipped"
                 fi
@@ -530,7 +484,7 @@ PYEOF
                 if [ "$DRY_RUN" = false ]; then
                     if [ ! -f "$CURSOR_MCP" ]; then
                         printf '{\n  "mcpServers": {\n    "wayfind": {\n      "command": "%s",\n      "args": []\n    }\n  }\n}\n' "$CURSOR_MCP_BIN" > "$CURSOR_MCP"
-                        log "Created ~/.cursor/mcp.json with wayfind MCP server"
+                        MCP_OK=true
                     else
                         TMP_MCP="$(mktemp)"
                         if python3 - "$CURSOR_MCP" "$CURSOR_MCP_BIN" "$TMP_MCP" <<'PYEOF' 2>/dev/null; then
@@ -549,21 +503,20 @@ with open(out_path, "w") as f:
     f.write("\n")
 PYEOF
                             mv "$TMP_MCP" "$CURSOR_MCP"
-                            log "Registered wayfind MCP server in ~/.cursor/mcp.json"
+                            MCP_OK=true
                         else
                             rm -f "$TMP_MCP"
-                            warn "Could not register MCP server — add manually to ~/.cursor/mcp.json:"
-                            warn "  \"mcpServers\": { \"wayfind\": { \"command\": \"$CURSOR_MCP_BIN\", \"args\": [] } }"
+                            warn "Could not register MCP server — add manually to ~/.cursor/mcp.json"
                         fi
                     fi
                 else
                     info "[dry-run] Would register wayfind MCP server ($CURSOR_MCP_BIN) in ~/.cursor/mcp.json"
                 fi
             else
-                info "MCP server already registered in ~/.cursor/mcp.json — skipped"
+                MCP_OK=true
             fi
         else
-            warn "wayfind-mcp binary not found — skipping Cursor MCP registration. Re-run after npm install."
+            warn "wayfind-mcp not found — MCP registration skipped. Re-run setup after npm install."
         fi
         ;;
 
@@ -591,7 +544,6 @@ if [ -n "$INSTALL_VERSION" ]; then
         TMP_VER="$(mktemp)"
         echo "$INSTALL_VERSION" > "$TMP_VER"
         mv "$TMP_VER" "$VERSION_DEST"
-        log "Version v${INSTALL_VERSION} written to $VERSION_DEST"
     else
         info "[dry-run] Would write v${INSTALL_VERSION} to $KIT_DEST_DIR/.wayfind-version"
     fi
@@ -658,7 +610,27 @@ fi
 # ── Summary ──────────────────────────────────────────────────────────────────
 
 echo ""
-echo -e "${GREEN}✓${RESET} Wayfind installed."
+
+# Aggregate summary of what was installed
+SUMMARY_PARTS=""
+[ "$CONFIG_FILES" -gt 0 ] && SUMMARY_PARTS="${SUMMARY_PARTS}${CONFIG_FILES} config files"
+if [ "$HOOKS_INSTALLED" -gt 0 ]; then
+    [ -n "$SUMMARY_PARTS" ] && SUMMARY_PARTS="${SUMMARY_PARTS}, "
+    SUMMARY_PARTS="${SUMMARY_PARTS}${HOOKS_INSTALLED} hooks"
+fi
+if [ "$COMMANDS_INSTALLED" -gt 0 ]; then
+    [ -n "$SUMMARY_PARTS" ] && SUMMARY_PARTS="${SUMMARY_PARTS}, "
+    SUMMARY_PARTS="${SUMMARY_PARTS}${COMMANDS_INSTALLED} commands"
+fi
+if [ "$MCP_OK" = true ]; then
+    [ -n "$SUMMARY_PARTS" ] && SUMMARY_PARTS="${SUMMARY_PARTS}, "
+    SUMMARY_PARTS="${SUMMARY_PARTS}MCP server"
+fi
+if [ -n "$SUMMARY_PARTS" ]; then
+    log "Created ${SUMMARY_PARTS}"
+fi
+
+echo -e "${GREEN}✓${RESET} Wayfind installed for ${TOOL}."
 echo ""
 
 if [ "$TOOL" = "claude-code" ]; then

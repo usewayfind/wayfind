@@ -215,7 +215,6 @@ if [ ! -f "$GLOBAL_STATE" ]; then
         run cp "$SCRIPT_DIR/templates/global.md" "$GLOBAL_STATE"
     fi
     log "Created $GLOBAL_STATE"
-    warn "Edit $GLOBAL_STATE to add your name, preferences, and projects"
 else
     info "Already exists: $GLOBAL_STATE — skipped"
 fi
@@ -656,40 +655,23 @@ Do not ask more than once per decision. Do not ask during routine implementation
     fi
 fi
 
-# ── Step 7: Personas (informational) ─────────────────────────────────────────
-
-header "Personas"
+# ── Summary ──────────────────────────────────────────────────────────────────
 
 echo ""
-echo "  Default personas: Product, Design, Engineering, Strategy"
-echo "  You can customize personas later with 'wayfind personas'"
+echo -e "${GREEN}✓${RESET} Wayfind installed."
 echo ""
-
-# ── Step 8: Summary ───────────────────────────────────────────────────────────
-
-header "Done"
-
-echo ""
-echo "Wayfind installed for $TOOL."
-echo ""
-echo "Next steps:"
-echo "  1. Edit $GLOBAL_STATE with your preferences and projects"
 
 if [ "$TOOL" = "claude-code" ]; then
-    echo "  2. Open a repo and run /init-memory to set it up"
-    echo "  3. Start a Claude Code session — it will load your state automatically"
-    echo "  4. Run /journal for a weekly digest of your AI session logs"
-    echo "  5. Set up your profile: wayfind whoami --setup"
-    echo "  6. Create or join a team: wayfind team create"
+    echo "  Next: open a repo and run /init-memory to set it up."
+    echo "        Then start a Claude Code session — Wayfind captures context automatically."
 elif [ "$TOOL" = "cursor" ]; then
-    echo "  2. Open a repo and run: bash setup.sh --tool cursor --repo <path>"
-    echo "  3. Start a Cursor session — the global rule loads your state automatically"
-    echo "  4. See specializations/cursor/README.md for full documentation"
+    echo "  Next: open a repo and run: bash setup.sh --tool cursor --repo <path>"
+    echo "        Then start a Cursor session — the global rule loads your state automatically."
 else
-    echo "  2. Add the session protocol to your tool's system prompt"
-    echo "     See: specializations/generic/README.md"
+    echo "  Next: add the session protocol to your tool's system prompt."
+    echo "        See: specializations/generic/README.md"
 fi
 
 echo ""
-echo "  Full documentation: README.md"
+echo "  Docs: https://github.com/usewayfind/wayfind"
 echo ""

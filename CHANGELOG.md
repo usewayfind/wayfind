@@ -2,6 +2,11 @@
 
 All notable changes to Wayfind are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.0.71] - 2026-04-06
+
+### Improved
+- **Cleaner post-install output.** Removed the scary "Edit global-state.md" warning that confused new users. Replaced 6-step "Next steps" list with a focused one-liner pointing to `/init-memory`. Removed unprompted personas dump. Added docs URL. First-time users now see a clear path to value instead of a wall of optional config.
+
 ## [2.0.70] - 2026-04-05
 
 ### Changed

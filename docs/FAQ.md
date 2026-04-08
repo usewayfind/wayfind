@@ -90,13 +90,15 @@ Not yet. Currently decisions are extracted from Claude Code session transcripts.
 
 ### Do I need to manually save state at the end of a session?
 
-Usually no. The session-end hook automatically extracts decisions, writes journal entries, and syncs to the team-context repo. As of v1.8.24, it also auto-detects significant context shifts and updates state files when needed.
+Usually no. The session-end hook syncs your journal entries and state to the team-context repo — no manual steps required.
 
-Manual updates are only needed for major context shifts that the auto-detection misses — product pivots, new team conventions, etc.
+Conversation extraction (pulling decisions from `.jsonl` transcripts) happens at **session start** for solo users, or via the **container's scheduled reindex** for teams. Either way, by the time you open your next session, the previous session's decisions are captured.
+
+Manual updates are only needed for major context shifts that auto-detection misses — product pivots, new team conventions, etc.
 
 ### What triggers a "significant context shift"?
 
-A lightweight Haiku LLM call classifies extracted decisions. It flags: architecture changes affecting the team, strategic pivots, new infrastructure/dependencies, priority reordering, and deployment gotchas. Routine bug fixes and incremental work are ignored.
+The container's reindex runs a lightweight Haiku LLM call after extracting decisions. It flags: architecture changes affecting the team, strategic pivots, new infrastructure/dependencies, priority reordering, and deployment gotchas. Routine bug fixes and incremental work are ignored.
 
 ---
 

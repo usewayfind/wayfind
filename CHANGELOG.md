@@ -2,6 +2,15 @@
 
 All notable changes to Wayfind are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.0.73] - 2026-04-08
+
+### Changed
+- **Stop hook is now fast and LLM-free.** The session-end hook no longer runs `reindex` or any LLM calls. It does two things only: split journal files by team suffix, then sync to the team-context repo. Sessions exit in ~2–5s instead of blocking for up to 30s.
+- **Start hook now shows what's happening.** The session-start hook displays a status header, pulls team context synchronously (so you start with fresh state), and ends with the goal prompt before you type anything.
+- **Solo mode reindex moved to session start.** For users without a container, conversation extraction now runs at the start of the *next* session rather than blocking the end of the current one. You see the benefit (decisions captured, stats shown) as you open the session.
+- **Context shift detection is container-only.** Removed from the stop hook; teams relying on the container already had this. Solo users can run `wayfind reindex --detect-shifts` manually when needed.
+- **Hook timeouts updated.** Stop: 30s → 20s. Start: 15s → 60s (to accommodate solo reindex).
+
 ## [2.0.72] - 2026-04-06
 
 ### Improved

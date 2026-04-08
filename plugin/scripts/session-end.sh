@@ -1,16 +1,14 @@
 #!/usr/bin/env bash
 # Wayfind plugin — Stop hook
-# Runs incremental conversation indexing with journal export after each session.
-# Extracted decisions get written to the journal directory so they sync via git
-# and the container's journal indexer picks them up.
+# Persists the session: splits journal files by team suffix, then syncs to
+# team-context repo. No LLM calls — fast, reliable, durability only.
 #
-# Performance target: <5s for the common case (no new conversations to process).
+# Heavy work (reindex, embeddings, context shift detection) is handled by
+# the container on a schedule, or by the session-start hook for solo users.
 
 set -euo pipefail
 
-# Skip export for worker agents in multi-agent swarms.
-# Set TEAM_CONTEXT_SKIP_EXPORT=1 when spawning worker agents so only the
-# orchestrator's decisions flow into the journal.
+# Skip for worker agents in multi-agent swarms.
 if [ "${TEAM_CONTEXT_SKIP_EXPORT:-}" = "1" ]; then
   exit 0
 fi
@@ -28,29 +26,12 @@ if [ -z "$WAYFIND" ]; then
 fi
 
 if [ -z "$WAYFIND" ]; then
-  echo "[wayfind] CLI not found — decision extraction skipped. Install: npm install -g wayfind" >&2
   exit 0
 fi
 
-# ── Fast path: skip reindex if no conversation files changed ──────────────────
-LAST_RUN_FILE="$HOME/.claude/team-context/.last-reindex"
-if [ -f "$LAST_RUN_FILE" ]; then
-  CHANGED=$(find "$HOME/.claude/projects" -name "*.jsonl" -newer "$LAST_RUN_FILE" -print -quit 2>/dev/null)
-  if [ -z "$CHANGED" ]; then
-    # No conversation files changed — skip expensive reindex, just split and sync journals
-    $WAYFIND journal split 2>/dev/null
-    $WAYFIND journal sync 2>/dev/null &
-    exit 0
-  fi
-fi
+# Split any unsuffixed journal files by team (fast, filesystem only)
+$WAYFIND journal split >/dev/null 2>&1 || true
 
-# Run incremental reindex
-$WAYFIND reindex --conversations-only --export --detect-shifts --write-stats 2>/dev/null || true
-
-# Update the marker so the next session's fast-path check works
-mkdir -p "$HOME/.claude/team-context"
-touch "$LAST_RUN_FILE"
-
-# Split any unsuffixed journals, then sync to team-context repo (sync backgrounded)
-$WAYFIND journal split 2>/dev/null
-$WAYFIND journal sync 2>/dev/null &
+# Sync journals to team-context repo — the durability guarantee.
+# Runs synchronously so the push completes before the hook exits.
+$WAYFIND journal sync 2>/dev/null || true

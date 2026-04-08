@@ -81,13 +81,12 @@ Journals are named `YYYY-MM-DD-<author>-<teamId>.md` in `~/.claude/memory/journa
 
 ### Conversation transcripts (automatic extraction)
 
-Claude Code stores conversation transcripts as `.jsonl` files in `~/.claude/projects/`. At session end, the stop hook runs:
+Claude Code stores conversation transcripts as `.jsonl` files in `~/.claude/projects/`. Extraction runs:
 
-```
-wayfind reindex --conversations-only --export
-```
+- **Solo users (no container):** at the next **session start** — the start hook runs `wayfind reindex --conversations-only --export` before the session opens, so the engineer starts with fresh context.
+- **Teams with a container:** the container's scheduled reindex handles extraction, then pushes results to the team-context repo. The session-start hook pulls those results.
 
-This sends each transcript to a lightweight LLM for decision extraction. Extracted decisions are written as journal entries (with team suffix) for git sync. The extraction is parallelized (max 5 concurrent LLM calls) and incremental (skips unchanged transcripts via content hashing).
+Either way, extraction is parallelized (max 5 concurrent LLM calls) and incremental (skips unchanged transcripts via content hashing).
 
 **Why this matters:** Engineers don't always write perfect journal entries. Conversation extraction captures decisions that were discussed but might not have made it into the explicit journal.
 

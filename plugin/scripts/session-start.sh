@@ -42,25 +42,12 @@ fi
 
 # Solo mode: index last session's conversations now
 # Teams rely on the container's scheduled reindex instead.
+# wayfind reindex handles its own change detection — skips fast if nothing new.
 if [ "$HAS_CONTAINER" = "false" ]; then
-  LAST_RUN_FILE="${WAYFIND_DIR:-$HOME/.claude/team-context}/.last-reindex"
-  SHOULD_REINDEX=true
-
-  if [ -f "$LAST_RUN_FILE" ]; then
-    CHANGED=$(find "$HOME/.claude/projects" -name "*.jsonl" -newer "$LAST_RUN_FILE" -print -quit 2>/dev/null)
-    if [ -z "$CHANGED" ]; then
-      SHOULD_REINDEX=false
-    fi
-  fi
-
-  if [ "$SHOULD_REINDEX" = "true" ]; then
-    echo ""
-    echo "  Indexing last session's conversations..."
-    echo ""
-    $WAYFIND reindex --conversations-only --export --write-stats 2>/dev/null || true
-    mkdir -p "${WAYFIND_DIR:-$HOME/.claude/team-context}"
-    touch "$LAST_RUN_FILE"
-  fi
+  echo ""
+  echo "  Indexing last session's conversations..."
+  echo ""
+  $WAYFIND reindex --conversations-only --export --write-stats 2>/dev/null || true
 fi
 
 # Rebuild Active Projects index (writes to global-state.md)

@@ -2,6 +2,11 @@
 
 All notable changes to Wayfind are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.0.74] - 2026-04-09
+
+### Fixed
+- **Session-start hook was never updated in the shipped package.** The 2.0.73 commit moved the new session-start logic (goal prompt, context pull, solo reindex) into `plugin/scripts/session-start.sh` but left the old minimal script in `specializations/claude-code/hooks/check-global-state.sh`. `wayfind update` copies from the specializations path, so the new behavior never reached users. Fixed: specializations hook now matches plugin hook.
+
 ## [2.0.73] - 2026-04-08
 
 ### Changed

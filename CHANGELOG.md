@@ -2,6 +2,12 @@
 
 All notable changes to Wayfind are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.0.75] - 2026-04-10
+
+### Fixed
+- **Context pull now always shows status on failure.** When `git pull` fails for any reason (network not ready after reboot, auth issue, etc.), the hook now emits `[wayfind] Team-context pull failed — using local state` to stdout instead of silently continuing. Previously only timeout produced a visible message; all other failures were swallowed by `2>/dev/null`.
+- **Session-start hook fix actually ships.** The 2.0.74 fix to `specializations/claude-code/hooks/check-global-state.sh` (removing the bash `find` staleness check) was committed after `sync-public` ran, so the npm package shipped with the old hook. Fixed by syncing correctly this release.
+
 ## [2.0.74] - 2026-04-09
 
 ### Fixed

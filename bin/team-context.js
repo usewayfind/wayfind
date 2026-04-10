@@ -3698,6 +3698,7 @@ async function contextPull(args) {
   } else if (result.error && result.error.code === 'ETIMEDOUT') {
     log('[wayfind] Team-context pull timed out — using local state');
   } else {
+    log('[wayfind] Team-context pull failed — using local state');
     const stderr = (result.stderr || '').toString().trim();
     if (stderr && !quiet) {
       console.error(`[wayfind] Team-context pull skipped: ${stderr.split('\n')[0]}`);

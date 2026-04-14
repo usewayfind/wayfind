@@ -317,6 +317,18 @@ async function teamCreate() {
   };
 
   writeJSONFile(TEAM_FILE, team);
+
+  // Register in local context.json so /init-memory and other commands can find this team
+  const config = readContextConfig();
+  if (!config.teams) config.teams = {};
+  config.teams[id] = {
+    path: WAYFIND_DIR,
+    name,
+    configured_at: new Date().toISOString(),
+  };
+  if (!config.default) config.default = id;
+  writeContextConfig(config);
+
   telemetry.capture('team_created', { member_count: 1 }, CLI_USER);
   console.log('');
   console.log(`Team '${name}' created.`);

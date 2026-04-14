@@ -2,6 +2,11 @@
 
 All notable changes to Wayfind are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.0.76] - 2026-04-14
+
+### Fixed
+- **`wayfind team create` now registers in `context.json`.** Previously, `team create` wrote `team.json` but skipped the `context.json` entry, so commands like `/init-memory` that read `context.json` for configured teams couldn't find the newly created team. Now mirrors the `team join` flow exactly. (Fix by [@tazguy999](https://github.com/tazguy999), closes [#185](https://github.com/usewayfind/wayfind/issues/185).)
+
 ## [2.0.75] - 2026-04-10
 
 ### Fixed

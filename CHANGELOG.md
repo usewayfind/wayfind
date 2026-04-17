@@ -2,6 +2,13 @@
 
 All notable changes to Wayfind are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.0.77] - 2026-04-17
+
+### Fixed
+- **Journal bloat: reindex now saves progress after each batch of 5 transcripts.** Previously the conversation index (`conversation-index.json`) was only written after all LLM extraction calls completed. The 60-second session-start hook timeout kills the process before that point when there are many unprocessed transcripts, so every session re-extracted all of them. Decisions extracted with slightly different LLM phrasing each time would bypass the title-based dedup and get written repeatedly — inflating journal files to 800KB+. Now the index is saved after each batch of 5, so partial progress survives a timeout.
+- **Journal dedup now uses source-transcript fingerprint, not title substring.** Added a `<!-- src-fp:HASH -->` marker to each exported decision block. On subsequent runs, if the same transcript fingerprint was already exported, the entire block is skipped — regardless of how the LLM rephrases the titles. Title-substring fallback is kept for entries written before this fix.
+- **Slow session-end hook.** The bloated journal files caused `journal sync`'s `git push` to crawl. Both issues share the same root cause — the journal bloat fix also restores the fast end-hook behavior from 2.0.73.
+
 ## [2.0.76] - 2026-04-14
 
 ### Fixed

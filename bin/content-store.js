@@ -1401,8 +1401,8 @@ async function indexConversations(options = {}) {
     candidates.push({ filePath, fp, transcript, transcriptText });
   }
 
-  // Phase 2: Fire LLM extraction calls in parallel with concurrency cap
-  // Cap at 5 to avoid API rate limits while still getting parallelism benefit
+  // Phase 2+3: Extract decisions and merge results in batches.
+  // Saving convIndex after each batch ensures a hook timeout doesn't discard all progress.
   const MAX_CONCURRENT = 5;
 
   if (options.onProgress) {
@@ -1411,7 +1411,6 @@ async function indexConversations(options = {}) {
     }
   }
 
-  const extractionResults = [];
   for (let i = 0; i < candidates.length; i += MAX_CONCURRENT) {
     const batch = candidates.slice(i, i + MAX_CONCURRENT);
     const batchResults = await Promise.all(
@@ -1424,65 +1423,67 @@ async function indexConversations(options = {}) {
         }
       })
     );
-    extractionResults.push(...batchResults);
-  }
 
-  // Phase 3: Merge results into shared indexes (sequential — single-threaded, no races)
-  for (const result of extractionResults) {
-    if (result.error) {
-      console.error(`Extraction failed for ${result.filePath}: ${result.error}`);
-      stats.errors++;
-      continue;
+    // Merge batch results immediately so a timeout preserves partial progress
+    for (const result of batchResults) {
+      if (result.error) {
+        console.error(`Extraction failed for ${result.filePath}: ${result.error}`);
+        stats.errors++;
+        continue;
+      }
+
+      const { filePath, fp, transcript, decisions } = result;
+
+      // Store extracted decisions in the content store
+      const entryIds = [];
+      const date = transcript.timestamp
+        ? transcript.timestamp.slice(0, 10)
+        : new Date().toISOString().slice(0, 10);
+
+      for (const decision of decisions) {
+        const id = generateEntryId(date, transcript.repo, decision.title);
+        const content = [
+          `${transcript.repo} — ${decision.title}`,
+          `Date: ${date}`,
+          `Decision: ${decision.decision}`,
+          decision.alternatives ? `Alternatives considered: ${decision.alternatives}` : '',
+        ].filter(Boolean).join('\n');
+
+        const hash = contentHash(content);
+
+        const convEntry = {
+          date,
+          repo: transcript.repo,
+          title: decision.title,
+          source: 'conversation',
+          user: '',
+          drifted: false,
+          contentHash: hash,
+          contentLength: content.length,
+          tags: decision.tags || [],
+          hasEmbedding: false,
+          hasReasoning: !!decision.has_reasoning,
+          hasAlternatives: !!decision.has_alternatives,
+          _content: content,
+        };
+        convEntry.qualityScore = computeQualityScore(convEntry);
+        existingIndex.entries[id] = convEntry;
+        entryIds.push(id);
+        stats.decisionsExtracted++;
+      }
+
+      // Notify caller of extracted decisions (used for journal export)
+      if (options.onDecisions && decisions.length > 0) {
+        options.onDecisions(date, transcript.repo, decisions, fp);
+      }
+
+      // Update conversation index
+      convIndex[filePath] = { fingerprint: fp, entryIds, extractedAt: Date.now() };
+      stats.transcriptsProcessed++;
     }
 
-    const { filePath, fp, transcript, decisions } = result;
-
-    // Store extracted decisions in the content store
-    const entryIds = [];
-    const date = transcript.timestamp
-      ? transcript.timestamp.slice(0, 10)
-      : new Date().toISOString().slice(0, 10);
-
-    for (const decision of decisions) {
-      const id = generateEntryId(date, transcript.repo, decision.title);
-      const content = [
-        `${transcript.repo} — ${decision.title}`,
-        `Date: ${date}`,
-        `Decision: ${decision.decision}`,
-        decision.alternatives ? `Alternatives considered: ${decision.alternatives}` : '',
-      ].filter(Boolean).join('\n');
-
-      const hash = contentHash(content);
-
-      const convEntry = {
-        date,
-        repo: transcript.repo,
-        title: decision.title,
-        source: 'conversation',
-        user: '',
-        drifted: false,
-        contentHash: hash,
-        contentLength: content.length,
-        tags: decision.tags || [],
-        hasEmbedding: false,
-        hasReasoning: !!decision.has_reasoning,
-        hasAlternatives: !!decision.has_alternatives,
-        _content: content,
-      };
-      convEntry.qualityScore = computeQualityScore(convEntry);
-      existingIndex.entries[id] = convEntry;
-      entryIds.push(id);
-      stats.decisionsExtracted++;
-    }
-
-    // Notify caller of extracted decisions (used for journal export)
-    if (options.onDecisions && decisions.length > 0) {
-      options.onDecisions(date, transcript.repo, decisions);
-    }
-
-    // Update conversation index
-    convIndex[filePath] = { fingerprint: fp, entryIds, extractedAt: Date.now() };
-    stats.transcriptsProcessed++;
+    // Save convIndex after each batch — partial progress survives a timeout kill
+    backend.saveConversationIndex(convIndex);
   }
 
   // Batch embed all new conversation entries
@@ -1640,21 +1641,25 @@ async function generateOnboardingPack(repoQuery, options = {}) {
  * @param {Array<{ title: string, decision: string, alternatives: string, tags: string[] }>} decisions
  * @param {string} journalDir - Journal directory path
  */
-function exportDecisionsAsJournal(date, repo, decisions, journalDir, teamId, author) {
+function exportDecisionsAsJournal(date, repo, decisions, journalDir, teamId, author, srcFp) {
   if (!decisions || decisions.length === 0) return;
 
   const authorPart = author ? `-${author}` : '';
   const teamPart = teamId ? `-${teamId}` : '';
   const filePath = path.join(journalDir, `${date}${authorPart}${teamPart}.md`);
 
-  // Dedup each decision individually against existing file content
   const existing = fs.existsSync(filePath)
     ? fs.readFileSync(filePath, 'utf8')
     : null;
 
+  // If this exact transcript (by fingerprint) was already exported, skip the whole block.
+  // This prevents re-export when a growing transcript's fingerprint changes and it gets
+  // re-extracted, producing LLM-rephrased titles that bypass title-substring dedup.
+  if (srcFp && existing && existing.includes(`<!-- src-fp:${srcFp} -->`)) return;
+
   const newLines = [];
   for (const d of decisions) {
-    // Skip if this decision's title already appears in the file
+    // Fallback per-title dedup for entries written before src-fp markers were added
     if (existing && existing.includes(d.title)) continue;
 
     const qualityTags = [];
@@ -1677,6 +1682,9 @@ function exportDecisionsAsJournal(date, repo, decisions, journalDir, teamId, aut
   }
 
   if (newLines.length === 0) return;
+
+  // Append source fingerprint marker so future runs can skip this whole block
+  if (srcFp) newLines.push(`<!-- src-fp:${srcFp} -->`);
 
   const content = '\n' + newLines.join('\n');
 
@@ -1709,16 +1717,16 @@ async function indexConversationsWithExport(options = {}) {
 
   const stats = await indexConversations({
     ...options,
-    onDecisions: exportDir ? (date, repo, decisions) => {
-      pendingExports.push({ date, repo, decisions });
+    onDecisions: exportDir ? (date, repo, decisions, fp) => {
+      pendingExports.push({ date, repo, decisions, fp });
     } : undefined,
   });
 
   // Write pending exports — route to per-team journal files
-  for (const { date, repo, decisions } of pendingExports) {
+  for (const { date, repo, decisions, fp } of pendingExports) {
     const teamId = repoToTeam(repo);
     if (!teamId) continue;  // Unbound repo — skip export (opt-in via .claude/wayfind.json)
-    exportDecisionsAsJournal(date, repo, decisions, exportDir, teamId, author);
+    exportDecisionsAsJournal(date, repo, decisions, exportDir, teamId, author, fp);
     exported += decisions.length;
     for (const d of decisions) {
       if (d.has_reasoning || d.has_alternatives) {

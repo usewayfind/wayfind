@@ -2,6 +2,12 @@
 
 All notable changes to Wayfind are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.0.78] - 2026-04-17
+
+### Fixed
+- **`wayfind update` and `/init-memory` now auto-patch Write permissions.** In plan mode (`defaultMode: "plan"`), Claude Code prompts for every Write tool call — including journal and state-file writes — even in bypass/dangerously-skip-permissions mode. Both `wayfind update` and the `/init-memory` skill now automatically add the required `Write` allowlist entries to `~/.claude/settings.json`, suppressing these prompts permanently. Idempotent — skips entries already present.
+- **Pilot guide updated** with a callout for plan-mode users explaining the symptom and fix.
+
 ## [2.0.77] - 2026-04-17
 
 ### Fixed

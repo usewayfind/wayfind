@@ -2898,6 +2898,42 @@ function extractStandupSection(lines, headers) {
 // ── Update command ─────────────────────────────────────────────────────────
 
 /**
+ * Ensure ~/.claude/settings.json contains Write allowlist entries for Wayfind
+ * state files (journals, team-state, personal-state). Without these, plan mode
+ * prompts for every state write, which is disruptive and confusing.
+ * Idempotent — skips entries already present.
+ * @returns {string[]} entries that were added (empty if nothing changed)
+ */
+function ensureStateWritePermissions() {
+  if (!HOME) return [];
+  const settingsPath = path.join(HOME, '.claude', 'settings.json');
+
+  const required = [
+    `Write(${HOME}/.claude/memory/**)`,
+    `Write(${HOME}/.claude/global-state.md)`,
+    `Write(${HOME}/.claude/state.md)`,
+    `Write(${HOME}/**/.claude/team-state.md)`,
+    `Write(${HOME}/**/.claude/personal-state.md)`,
+  ];
+
+  let settings = {};
+  if (fs.existsSync(settingsPath)) {
+    try { settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8')); } catch { return []; }
+  }
+
+  if (!settings.permissions) settings.permissions = {};
+  if (!Array.isArray(settings.permissions.allow)) settings.permissions.allow = [];
+
+  const existing = new Set(settings.permissions.allow);
+  const added = required.filter(r => !existing.has(r));
+  if (added.length === 0) return [];
+
+  settings.permissions.allow.push(...added);
+  fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + '\n');
+  return added;
+}
+
+/**
  * Re-sync hooks and commands from the installed Wayfind package to ~/.claude/.
  * Copies hook scripts and slash-command files, overwriting stale copies.
  */
@@ -2971,6 +3007,15 @@ function runUpdate() {
     console.log(`\n  ${updated} file(s) updated, ${skipped} already current.`);
   } else {
     console.log('  Everything up to date.');
+  }
+
+  // Ensure state-file Write permissions are allowlisted so plan mode doesn't
+  // prompt on every journal/state write.
+  const addedPerms = ensureStateWritePermissions();
+  if (addedPerms.length > 0) {
+    console.log('\n── Write permissions ──');
+    for (const p of addedPerms) console.log(`  ✓ Allowlisted: ${p}`);
+    console.log('  (Prevents plan-mode prompts on journal and state-file writes)');
   }
 }
 

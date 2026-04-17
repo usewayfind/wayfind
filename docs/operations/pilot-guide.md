@@ -30,6 +30,8 @@ No team setup. No integrations. One person, one repo.
 4. End sessions properly (say "done" or "pause") so context persists.
 5. Run `wayfind update` after upgrading to re-sync hooks and commands. Run `wayfind doctor` to verify health.
 
+> **Plan mode users:** If your Claude Code `defaultMode` is set to `"plan"` in `~/.claude/settings.json`, you will be prompted to approve every journal and state-file write — even in bypass/dangerously-skip-permissions mode. Both `wayfind update` and `/init-memory` automatically add the required `Write` allowlist entries to suppress these prompts. If you skipped these steps and are seeing constant write prompts, run `wayfind update` once to fix it.
+
 This is the PLG entry point. The engineer gets value immediately -- no coordination cost, no buy-in required from anyone else. They stop losing context between sessions. That's enough to keep going.
 
 **Exit criteria:** The engineer voluntarily uses Wayfind for 3+ sessions in a row without being reminded.

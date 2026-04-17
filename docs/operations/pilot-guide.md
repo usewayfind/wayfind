@@ -30,7 +30,11 @@ No team setup. No integrations. One person, one repo.
 4. End sessions properly (say "done" or "pause") so context persists.
 5. Run `wayfind update` after upgrading to re-sync hooks and commands. Run `wayfind doctor` to verify health.
 
-> **Plan mode users:** If your Claude Code `defaultMode` is set to `"plan"` in `~/.claude/settings.json`, you will be prompted to approve every journal and state-file write — even in bypass/dangerously-skip-permissions mode. Both `wayfind update` and `/init-memory` automatically add the required `Write` allowlist entries to suppress these prompts. If you skipped these steps and are seeing constant write prompts, run `wayfind update` once to fix it.
+> **Write permission prompts?** Two separate issues can cause Claude Code to prompt on every journal or state-file write:
+> 1. **Plan-mode write prompts** — if `defaultMode` is `"plan"` in `~/.claude/settings.json`. Fixed by `Write` allowlist entries.
+> 2. **"Sensitive file" prompts for `~/.claude/` paths** — a hardcoded Claude Code check that fires even in bypass mode and even with a correct allowlist. Fixed by a `PermissionRequest` hook.
+>
+> Both `wayfind update` and `/wayfind:init-memory` automatically apply both fixes. If you're still seeing prompts after setup, run `wayfind update` once to patch your local settings.
 
 This is the PLG entry point. The engineer gets value immediately -- no coordination cost, no buy-in required from anyone else. They stop losing context between sessions. That's enough to keep going.
 

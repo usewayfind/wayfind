@@ -2943,6 +2943,40 @@ function ensureStateWritePermissions() {
 }
 
 /**
+ * Ensure ~/.claude/settings.json has the PermissionRequest hook that auto-approves
+ * Write calls to Wayfind state files. The permissions.allow list doesn't suppress
+ * Claude Code's sensitive-file prompt for ~/.claude/ paths; a PermissionRequest hook
+ * returning {"decision":"allow"} does.
+ * Idempotent — no-ops if the hook command is already registered.
+ * @returns {boolean} true if the hook was added
+ */
+function ensurePermissionRequestHook() {
+  if (!HOME) return false;
+  const settingsPath = path.join(HOME, '.claude', 'settings.json');
+  const hookCommand = 'bash ~/.claude/hooks/allow-wayfind-writes.sh';
+
+  let settings = {};
+  if (fs.existsSync(settingsPath)) {
+    try { settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8')); } catch { return false; }
+  }
+
+  if (!settings.hooks) settings.hooks = {};
+  if (!Array.isArray(settings.hooks.PermissionRequest)) settings.hooks.PermissionRequest = [];
+
+  const alreadyRegistered = settings.hooks.PermissionRequest.some(entry =>
+    Array.isArray(entry.hooks) && entry.hooks.some(h => h.command === hookCommand)
+  );
+  if (alreadyRegistered) return false;
+
+  settings.hooks.PermissionRequest.push({
+    matcher: 'Write',
+    hooks: [{ type: 'command', command: hookCommand, timeout: 5000 }],
+  });
+  fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + '\n');
+  return true;
+}
+
+/**
  * Re-sync hooks and commands from the installed Wayfind package to ~/.claude/.
  * Copies hook scripts and slash-command files, overwriting stale copies.
  */
@@ -3025,6 +3059,15 @@ function runUpdate() {
     console.log('\n── Write permissions ──');
     for (const p of addedPerms) console.log(`  ✓ Allowlisted: ${p}`);
     console.log('  (Prevents plan-mode prompts on journal and state-file writes)');
+  }
+
+  // Register PermissionRequest hook to suppress sensitive-file prompts for
+  // ~/.claude/ paths, which the allowlist alone cannot suppress.
+  const hookAdded = ensurePermissionRequestHook();
+  if (hookAdded) {
+    console.log('\n── PermissionRequest hook ──');
+    console.log('  ✓ Registered allow-wayfind-writes.sh');
+    console.log('  (Suppresses sensitive-file prompts for ~/.claude/ paths)');
   }
 }
 

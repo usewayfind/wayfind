@@ -2,6 +2,11 @@
 
 All notable changes to Wayfind are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.0.80] - 2026-04-17
+
+### Fixed
+- **`wayfind update` and `/init-memory` now register a `PermissionRequest` hook to suppress sensitive-file prompts.** Claude Code has a hardcoded check for `~/.claude/` paths that fires a "sensitive file" prompt independently of `permissions.allow` — meaning the allowlist entries added in 2.0.78/2.0.79 could not suppress it. Both `wayfind update` and `/init-memory` now also install `allow-wayfind-writes.sh` and register it as a `PermissionRequest` hook in `~/.claude/settings.json`. This hook returns `{"decision": "allow"}` for Wayfind state paths before the UI prompt appears. Idempotent — skips if already registered.
+
 ## [2.0.79] - 2026-04-17
 
 ### Fixed

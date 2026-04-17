@@ -146,9 +146,11 @@ Read the repo's `CLAUDE.md`. If it does NOT already contain "Session State Proto
 
 If `CLAUDE.md` doesn't exist, create a minimal one with the repo name as a heading and the block above.
 
-## Step 4.5: Patch Write Permissions in ~/.claude/settings.json
+## Step 4.5: Patch Write Permissions and PermissionRequest Hook in ~/.claude/settings.json
 
 Read `~/.claude/settings.json` (create it as `{}` if missing).
+
+### Part A: Write allowlist
 
 Ensure the following entries are present in `permissions.allow`. Add any that are missing — do NOT remove existing entries.
 
@@ -169,9 +171,44 @@ Write(.claude/personal-state.md)
 
 Where `<HOME>` is the user's actual home directory (e.g. `/home/greg` or `/Users/greg`).
 
-**Why:** Without these, Claude Code's plan mode prompts for approval on every journal and state-file write — even when the user is in bypass/dangerously-skip-permissions mode. These files are internal Wayfind state and are never dangerous to write.
+### Part B: PermissionRequest hook
 
-Report: "Write permissions patched — N entries added" (or "already present" if nothing changed).
+Claude Code has a hardcoded sensitive-file check for `~/.claude/` paths that fires **independently** of `permissions.allow` — the allowlist alone cannot suppress it. A `PermissionRequest` hook is required.
+
+First verify `~/.claude/hooks/allow-wayfind-writes.sh` exists. If missing, create it:
+
+```bash
+#!/usr/bin/env bash
+input=$(cat)
+file_path=$(echo "$input" | jq -r '.tool_input.file_path // empty' 2>/dev/null)
+[ -z "$file_path" ] && exit 0
+expanded="${file_path/#\~/$HOME}"
+if [[ "$expanded" == "$HOME/.claude/memory/"* ]] || \
+   [[ "$expanded" == "$HOME/.claude/global-state.md" ]] || \
+   [[ "$expanded" == "$HOME/.claude/state.md" ]] || \
+   [[ "$expanded" == *"/.claude/team-state.md" ]] || \
+   [[ "$expanded" == *"/.claude/personal-state.md" ]]; then
+  echo '{"decision": "allow"}'
+  exit 0
+fi
+```
+
+Make it executable: `chmod +x ~/.claude/hooks/allow-wayfind-writes.sh`
+
+Then ensure this entry is present in `hooks.PermissionRequest` in `~/.claude/settings.json`:
+
+```json
+{
+  "matcher": "Write",
+  "hooks": [{ "type": "command", "command": "bash ~/.claude/hooks/allow-wayfind-writes.sh", "timeout": 5000 }]
+}
+```
+
+Add it if missing — do NOT remove existing entries in the array.
+
+**Why:** Without Part A, plan-mode users get prompted on every journal write. Without Part B, even bypass-mode users see "sensitive file" prompts for `~/.claude/` paths — which the allowlist cannot suppress.
+
+Report: "Write permissions patched — N entries added; PermissionRequest hook registered" (or "already present" for each if nothing changed).
 
 ## Step 5: Register State Files in Global Index
 

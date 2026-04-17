@@ -150,14 +150,21 @@ If `CLAUDE.md` doesn't exist, create a minimal one with the repo name as a headi
 
 Read `~/.claude/settings.json` (create it as `{}` if missing).
 
-Ensure the following entries are present in `permissions.allow`. Add any that are missing — do NOT remove existing entries:
+Ensure the following entries are present in `permissions.allow`. Add any that are missing — do NOT remove existing entries.
+
+Each path needs two forms: absolute (for tools that resolve paths before the permission check) and literal (tilde or relative, for tools that pass the path as-is). Both are required — Claude Code matches against the literal `file_path` argument, not the resolved path.
 
 ```
 Write(<HOME>/.claude/memory/**)
+Write(~/.claude/memory/**)
 Write(<HOME>/.claude/global-state.md)
+Write(~/.claude/global-state.md)
 Write(<HOME>/.claude/state.md)
+Write(~/.claude/state.md)
 Write(<HOME>/**/.claude/team-state.md)
+Write(.claude/team-state.md)
 Write(<HOME>/**/.claude/personal-state.md)
+Write(.claude/personal-state.md)
 ```
 
 Where `<HOME>` is the user's actual home directory (e.g. `/home/greg` or `/Users/greg`).

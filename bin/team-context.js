@@ -2908,12 +2908,21 @@ function ensureStateWritePermissions() {
   if (!HOME) return [];
   const settingsPath = path.join(HOME, '.claude', 'settings.json');
 
+  // Each path is listed twice: once as absolute (for tools that resolve paths)
+  // and once as the literal form Claude Code may pass (tilde or relative).
+  // Permission matching is against the literal file_path argument, not the
+  // resolved path, so both forms are needed.
   const required = [
     `Write(${HOME}/.claude/memory/**)`,
+    `Write(~/.claude/memory/**)`,
     `Write(${HOME}/.claude/global-state.md)`,
+    `Write(~/.claude/global-state.md)`,
     `Write(${HOME}/.claude/state.md)`,
+    `Write(~/.claude/state.md)`,
     `Write(${HOME}/**/.claude/team-state.md)`,
+    `Write(.claude/team-state.md)`,
     `Write(${HOME}/**/.claude/personal-state.md)`,
+    `Write(.claude/personal-state.md)`,
   ];
 
   let settings = {};

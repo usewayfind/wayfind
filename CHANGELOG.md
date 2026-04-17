@@ -2,6 +2,11 @@
 
 All notable changes to Wayfind are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.0.79] - 2026-04-17
+
+### Fixed
+- **Write permission patterns now cover tilde and relative paths.** The 2.0.78 allowlist entries used absolute paths (`/home/user/...`) but Claude Code matches permissions against the literal `file_path` argument passed to the Write tool — which can be a tilde path (`~/.claude/memory/...`) or a relative path (`.claude/team-state.md`). Both forms are now included for each entry. `wayfind update` adds the new entries alongside the old ones (idempotent).
+
 ## [2.0.78] - 2026-04-17
 
 ### Fixed

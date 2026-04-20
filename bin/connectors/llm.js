@@ -144,7 +144,7 @@ async function callAnthropic(config, systemPrompt, userContent) {
   const payload = JSON.stringify({
     model: config.model,
     max_tokens: config.max_tokens || DEFAULT_MAX_TOKENS,
-    system: systemPrompt,
+    system: [{ type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } }],
     messages: [{ role: 'user', content: userContent }],
   });
 
@@ -327,13 +327,35 @@ async function callWithTools(config, systemPrompt, userContent, tools, handleToo
   const MAX_ITERATIONS = 10;
   let messages = [{ role: 'user', content: userContent }];
 
+  // Breakpoint on system prompt and last tool definition: the system+tools prefix
+  // is stable across all iterations, so these hits are what pay for the loop.
+  const cachedSystem = [{ type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } }];
+  const cachedTools = tools.map((t, idx) =>
+    idx === tools.length - 1 ? { ...t, cache_control: { type: 'ephemeral' } } : t
+  );
+
   for (let i = 0; i < MAX_ITERATIONS; i++) {
+    // Breakpoint on the last message so the growing transcript also caches
+    // across iterations after the first.
+    const cachedMessages = messages.map((m, idx) => {
+      if (idx !== messages.length - 1) return m;
+      if (typeof m.content === 'string') {
+        return { ...m, content: [{ type: 'text', text: m.content, cache_control: { type: 'ephemeral' } }] };
+      }
+      if (Array.isArray(m.content) && m.content.length > 0) {
+        const last = m.content[m.content.length - 1];
+        const patched = { ...last, cache_control: { type: 'ephemeral' } };
+        return { ...m, content: [...m.content.slice(0, -1), patched] };
+      }
+      return m;
+    });
+
     const payload = JSON.stringify({
       model: config.model,
       max_tokens: config.max_tokens || DEFAULT_MAX_TOKENS,
-      system: systemPrompt,
-      messages,
-      tools,
+      system: cachedSystem,
+      messages: cachedMessages,
+      tools: cachedTools,
     });
 
     const res = await httpPost(ANTHROPIC_API_URL, headers, payload);

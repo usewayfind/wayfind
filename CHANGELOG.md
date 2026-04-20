@@ -2,6 +2,11 @@
 
 All notable changes to Wayfind are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.0.81] - 2026-04-20
+
+### Fixed
+- **Anthropic API calls now set `cache_control` breakpoints — 0% prompt cache hit rate is resolved.** `bin/connectors/llm.js` was sending every request without any cache breakpoints, so every call to Anthropic paid full input-token cost regardless of prefix stability. Worst offender was `callWithTools` (the bot-query tool-use relay from 2.0.70), which resends the full system prompt + tools + growing message list on each loop iteration. Both `callAnthropic` and `callWithTools` now mark the system prompt, the tools array, and the last message with `cache_control: { type: 'ephemeral' }`. Expect cache-hit >0% within minutes on the next digest/bot-query run.
+
 ## [2.0.80] - 2026-04-17
 
 ### Fixed
